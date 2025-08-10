@@ -304,10 +304,10 @@
     return html;
   }
   function buildLockLevelDropdown(itemNumber) {
-    // Show lock dropdown for all 10 items, values 1-5
+    // Show lock dropdown for all 10 items
     let html = `<select id="pieLock${itemNumber}" style="margin-left:4px;font-size:10px;height:20px;width:35px;">`;
-    for (let i = 1; i <= 5; i++) {
-      html += `<option value="${i}">${i}</option>`;
+    for (let i = 0; i <= 4; i++) {
+      html += `<option value="${i}">${i + 1}</option>`;
     }
     html += '</select>';
     return html;
@@ -494,11 +494,14 @@
         for (let i = 1; i <= 10; i++) {
           const cat = $(`#pieItem${i}`).val();
           if (cat === gasStationKey) {
-            lockRank = parseInt($(`#pieLock${i}`).val(), 10);
+            lockRank = parseInt($(`#pieLock${i}`).val(), 10) + 1; // lock dropdown is zero-based, add 1
             break;
           }
         }
-        if (!lockRank || isNaN(lockRank)) lockRank = 2; // fallback to 2 if not found
+        // If not found in dropdown, fallback to venue.lockRank if available
+        if (!lockRank || isNaN(lockRank)) {
+          lockRank = (venue.lockRank && !isNaN(venue.lockRank)) ? venue.lockRank : 1;
+        }
         // Move current name to aliases if not 'NOC'
         if (venue.name !== 'NOC') {
           let aliases = Array.isArray(venue.aliases) ? venue.aliases.slice() : [];
