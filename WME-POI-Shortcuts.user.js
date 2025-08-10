@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.08.10.003
+// @version         2025.08.10.005
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -441,6 +441,21 @@
     });
   }
 
+  function getGasStationCategoryKey() {
+    // Use I18n to get the correct category key for gas station
+    // Fallback to 'GAS_STATION' if not found
+    let locale = (typeof I18n !== 'undefined' && I18n.currentLocale) ? I18n.currentLocale() : 'en';
+    let categories = I18n?.translations?.[locale]?.venues?.categories || {};
+    // Find the key for 'Gas Station' or 'Petrol Station' in the current language
+    for (const key in categories) {
+      if (categories[key] === 'Gas Station' || categories[key] === 'Petrol Station') {
+        return key;
+      }
+    }
+    // Fallback to 'GAS_STATION'
+    return 'GAS_STATION';
+  }
+
   function injectNOCButtonIfNepalGasStation(wmeSDK) {
     // Only run if a venue is selected
     const selection = wmeSDK.Editing.getSelection();
@@ -449,43 +464,65 @@
     const venueId = selection.ids[0];
     const venue = wmeSDK.DataModel.Venues.getById({ venueId });
     const topCountry = wmeSDK.DataModel.Countries.getTopCountry();
+    const gasStationKey = getGasStationCategoryKey();
 
-    // Only show for Nepal gas stations
-    if (!venue || !topCountry || (topCountry.name !== 'Nepal' && topCountry.code !== 'NP') || venue.category !== 'GAS_STATION') return;
+    // Check if venue.categories (array) contains the gas station key
+    const isNepalGasStation = !!venue && !!topCountry && (topCountry.name === 'Nepal' || topCountry.code === 'NP') && Array.isArray(venue.categories) && venue.categories.includes(gasStationKey);
+    if (!isNepalGasStation) return;
 
-    // Prevent duplicate button
-    if ($('.noc-gas-station-btn').length > 0) return;
-
-    // Inject button after categories
-    const buttonHtml = `
-      <div class='form-group e85 e85-e85-14'>
-        <label class='control-label'>Setup Station as</label>
-        <button class='waze-btn waze-btn-small waze-btn-white e85 noc-gas-station-btn'>NOC</button>
-      </div>
-    `;
-    $('.categories-control').after(buttonHtml);
-
-    // Button click handler
-    $('.noc-gas-station-btn').on('click', function() {
-      // Move current name to aliases if not 'NOC'
-      if (venue.name !== 'NOC') {
-        let aliases = Array.isArray(venue.aliases) ? venue.aliases.slice() : [];
-        if (venue.name && !aliases.includes(venue.name)) {
-          aliases.push(venue.name);
-        }
-        wmeSDK.DataModel.Venues.updateVenue({
-          venueId: venueId,
-          name: 'NOC',
-          brand: 'Nepal Oil Corporation',
-          aliases: aliases
-        });
-      } else {
-        wmeSDK.DataModel.Venues.updateVenue({
-          venueId: venueId,
-          brand: 'Nepal Oil Corporation'
-        });
+    // Wait for the categories-control element to exist
+    function tryInject() {
+      const $catControl = $('.categories-control');
+      if ($catControl.length === 0) {
+        setTimeout(tryInject, 150); // Retry after 150ms
+        return;
       }
-    });
+      // Prevent duplicate button
+      if ($('.noc-gas-station-btn').length > 0) return;
+      // Inject button after categories-control
+      const buttonHtml = `
+        <div class='form-group e85 e85-e85-14'>
+          <label class='control-label'>Setup Station as</label>
+          <button class='waze-btn waze-btn-small waze-btn-white e85 noc-gas-station-btn'>NOC</button>
+        </div>
+      `;
+      $catControl.after(buttonHtml);
+      // Button click handler
+      $('.noc-gas-station-btn').on('click', function() {
+        // Determine lockRank for gas station
+        let lockRank = 2; // Default lock
+        let foundShortcut = false;
+        for (let i = 1; i <= 10; i++) {
+          const cat = $(`#pieItem${i}`).val();
+          if (cat === gasStationKey) {
+            lockRank = parseInt($(`#pieLock${i}`).val(), 10);
+            foundShortcut = true;
+            break;
+          }
+        }
+        // Move current name to aliases if not 'NOC'
+        if (venue.name !== 'NOC') {
+          let aliases = Array.isArray(venue.aliases) ? venue.aliases.slice() : [];
+          if (venue.name && !aliases.includes(venue.name)) {
+            aliases.push(venue.name);
+          }
+          wmeSDK.DataModel.Venues.updateVenue({
+            venueId: venueId,
+            name: 'NOC',
+            brand: 'Nepal Oil Corporation',
+            aliases: aliases,
+            lockRank: lockRank
+          });
+        } else {
+          wmeSDK.DataModel.Venues.updateVenue({
+            venueId: venueId,
+            brand: 'Nepal Oil Corporation',
+            lockRank: lockRank
+          });
+        }
+      });
+    }
+    tryInject();
   }
 
   async function registerSidebarScriptTab(wmeSDK) {
