@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.04.10.009
+// @version         2025.08.10.011
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -13,8 +13,6 @@
 // @require         https://greasyfork.org/scripts/24851-wazewrap/code/WazeWrap.js
 // @require         https://update.greasyfork.org/scripts/509664/WME%20Utils%20-%20Bootstrap.js
 // @require         https://update.greasyfork.org/scripts/523706/1569240/Link%20Enhancer.js
-// @downloadURL
-// @updateURL
 // ==/UserScript==
 
 /* global WazeWrap */
@@ -24,7 +22,7 @@
   ('use strict');
 
   const updateMessage = `
-updated urls`;
+Temporarily sdk based shortcuts disabled and legacy shortcuts key support added`;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
   const downloadUrl = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/code/wme-poi-shortcuts.user.js';
@@ -37,7 +35,7 @@ updated urls`;
   } else {
     console.error('WME SDK is not available. Script will not run.');
   }
-  
+
   // Inject custom CSS for grayed out disabled options
   injectCSSWithID('pieDisabledOptionStyle', `select[id^='pieItem'] option:disabled { color: #bbb !important; background: #000000ff !important; }`);
 
@@ -347,6 +345,11 @@ updated urls`;
     setTimeout(() => {
       for (let i = 1; i <= 10; i++) {
         loadPOIShortcutItem(i);
+        //legacy shortcuts key added from here
+        // Populate shortcut input with the actual shortcut key
+        const shortcutKey = i === 10 ? 'Ctrl+0' : `Ctrl+${i}`;
+        $(`#pieShortcut${i}`).val(shortcutKey);
+        // legacy shortcuts key added until above
         // Save on change
         $(`#pieItem${i},#pieLock${i},#pieGeom${i}`)
           .off('change.wmepoi')
@@ -393,8 +396,10 @@ updated urls`;
     }, 0);
     return html;
   }
-
-  // --- Shortcuts Setup ---
+  /*
+  // --- wmeSDK Shortcuts Setup ---
+  // TODO: Re-enable when wmeSDK fixes shortcuts persistence after page refresh
+  /*
   function setupShortcuts(wmeSDK) {
     // Create 10 POI shortcut actions, one for each item
     for (let i = 1; i <= 10; i++) {
@@ -481,6 +486,253 @@ updated urls`;
       shortcutKeys: null,
     });
   }
+  */
+  /***********************************************legacy shortcuts below*********************************************** */
+  // --- Legacy Shortcuts Setup (Temporary until wmeSDK fixes shortcuts persistence) ---
+  function setupShortcuts(wmeSDK) {
+    // Legacy shortcuts configuration - maps shortcut numbers to keyboard combos
+    var shortcutsConfig = [
+      {
+        handler: 'WME-POI-Shortcuts_poi1',
+        title: 'POI Shortcut 1',
+        func: function (ev) {
+          createPOIFromShortcut(1, wmeSDK);
+        },
+        key: null,
+        arg: { slotNumber: 1 },
+      },
+      {
+        handler: 'WME-POI-Shortcuts_poi2',
+        title: 'POI Shortcut 2',
+        func: function (ev) {
+          createPOIFromShortcut(2, wmeSDK);
+        },
+        key: null,
+        arg: { slotNumber: 2 },
+      },
+      {
+        handler: 'WME-POI-Shortcuts_poi3',
+        title: 'POI Shortcut 3',
+        func: function (ev) {
+          createPOIFromShortcut(3, wmeSDK);
+        },
+        key: null,
+        arg: { slotNumber: 3 },
+      },
+      {
+        handler: 'WME-POI-Shortcuts_poi4',
+        title: 'POI Shortcut 4',
+        func: function (ev) {
+          createPOIFromShortcut(4, wmeSDK);
+        },
+        key: null,
+        arg: { slotNumber: 4 },
+      },
+      {
+        handler: 'WME-POI-Shortcuts_poi5',
+        title: 'POI Shortcut 5',
+        func: function (ev) {
+          createPOIFromShortcut(5, wmeSDK);
+        },
+        key: null,
+        arg: { slotNumber: 5 },
+      },
+      {
+        handler: 'WME-POI-Shortcuts_poi6',
+        title: 'POI Shortcut 6',
+        func: function (ev) {
+          createPOIFromShortcut(6, wmeSDK);
+        },
+        key: null,
+        arg: { slotNumber: 6 },
+      },
+      {
+        handler: 'WME-POI-Shortcuts_poi7',
+        title: 'POI Shortcut 7',
+        func: function (ev) {
+          createPOIFromShortcut(7, wmeSDK);
+        },
+        key: null,
+        arg: { slotNumber: 7 },
+      },
+      {
+        handler: 'WME-POI-Shortcuts_poi8',
+        title: 'POI Shortcut 8',
+        func: function (ev) {
+          createPOIFromShortcut(8, wmeSDK);
+        },
+        key: null,
+        arg: { slotNumber: 8 },
+      },
+      {
+        handler: 'WME-POI-Shortcuts_poi9',
+        title: 'POI Shortcut 9',
+        func: function (ev) {
+          createPOIFromShortcut(9, wmeSDK);
+        },
+        key: null,
+        arg: { slotNumber: 9 },
+      },
+      {
+        handler: 'WME-POI-Shortcuts_poi10',
+        title: 'POI Shortcut 10',
+        func: function (ev) {
+          createPOIFromShortcut(10, wmeSDK);
+        },
+        key: null,
+        arg: { slotNumber: 10 },
+      },
+      {
+        handler: 'WME-POI-Shortcuts_toll-booth',
+        title: 'Add Toll Booth',
+        func: function (ev) {
+          $("wz-icon[name='toll-booth']").parent().trigger('click');
+        },
+        key: -1, // No default key, user can set custom
+        arg: {},
+      },
+      {
+        handler: 'WME-POI-Shortcuts_level-crossing',
+        title: 'Add Level Crossing',
+        func: function (ev) {
+          $("wz-icon[name='railway-crossing']").parent().trigger('click');
+        },
+        key: -1, // No default key, user can set custom
+        arg: {},
+      },
+      {
+        handler: 'WME-POI-Shortcuts_school-zone',
+        title: 'Create School Zone',
+        func: function (ev) {
+          $("wz-icon[name='school-zone']").parent().trigger('click');
+        },
+        key: -1, // No default key, user can set custom
+        arg: {},
+      },
+    ];
+
+    // Register legacy shortcuts
+    for (var i = 0; i < shortcutsConfig.length; ++i) {
+      WMEKSRegisterKeyboardShortcut('WME-POI-Shortcuts', 'WME POI Shortcuts', shortcutsConfig[i].handler, shortcutsConfig[i].title, shortcutsConfig[i].func, shortcutsConfig[i].key, shortcutsConfig[i].arg);
+    }
+
+    WMEKSLoadKeyboardShortcuts('WME-POI-Shortcuts');
+
+    window.addEventListener(
+      'beforeunload',
+      function () {
+        WMEKSSaveKeyboardShortcuts('WME-POI-Shortcuts');
+      },
+      false
+    );
+  }
+
+  // Function to create POI from shortcut slot
+  function createPOIFromShortcut(slotNumber, wmeSDK) {
+    try {
+      // Get selected values from the UI for this item
+      const cat = $(`#pieItem${slotNumber}`).val();
+      const lock = parseInt($(`#pieLock${slotNumber}`).val(), 10);
+      const geomType = $(`#pieGeom${slotNumber}`).val();
+
+      if (!cat || cat === '') {
+        console.warn(`POI Shortcut ${slotNumber}: No category selected`);
+        return;
+      }
+
+      // Geometry: area = drawPolygon, point = drawPoint
+      let drawPromise = geomType === 'point' ? wmeSDK.Map.drawPoint() : wmeSDK.Map.drawPolygon();
+      drawPromise.then((geometry) => {
+        let newVenue = wmeSDK.DataModel.Venues.addVenue({
+          category: cat,
+          geometry: geometry,
+        });
+        wmeSDK.Editing.setSelection({
+          selection: {
+            ids: [newVenue.toString()],
+            objectType: 'venue',
+          },
+        });
+        // Only set lock if lock > 0 (lockRank 1-4)
+        if (!isNaN(lock) && lock > 0) {
+          wmeSDK.DataModel.Venues.updateVenue({
+            venueId: newVenue.toString(),
+            lockRank: lock,
+          });
+        }
+        // Nepal-specific logic for Gas Station
+        const topCountry = wmeSDK.DataModel.Countries.getTopCountry();
+        if (topCountry && (topCountry.name === 'Nepal' || topCountry.code === 'NP') && cat === 'GAS_STATION') {
+          wmeSDK.DataModel.Venues.updateVenue({
+            venueId: newVenue.toString(),
+            name: 'NOC',
+            brand: 'Nepal Oil Corporation',
+          });
+        }
+      });
+    } catch (error) {
+      console.error(`Error creating POI from shortcut ${slotNumber}:`, error);
+    }
+  }
+
+  // --- Legacy Keyboard Shortcuts System (from WME Street to River PLUS) ---
+  function WMEKSRegisterKeyboardShortcut(scriptName, shortcutsHeader, newShortcut, shortcutDescription, functionToCall, shortcutKeysObj, arg) {
+    try {
+      I18n.translations[I18n.locale].keyboard_shortcuts.groups[scriptName].members.length;
+    } catch (c) {
+      (W.accelerators.Groups[scriptName] = []),
+        (W.accelerators.Groups[scriptName].members = []),
+        (I18n.translations[I18n.locale].keyboard_shortcuts.groups[scriptName] = []),
+        (I18n.translations[I18n.locale].keyboard_shortcuts.groups[scriptName].description = shortcutsHeader),
+        (I18n.translations[I18n.locale].keyboard_shortcuts.groups[scriptName].members = []);
+    }
+    if (functionToCall && 'function' == typeof functionToCall) {
+      (I18n.translations[I18n.locale].keyboard_shortcuts.groups[scriptName].members[newShortcut] = shortcutDescription),
+        W.accelerators.addAction(newShortcut, {
+          group: scriptName,
+        });
+      var i = '-1',
+        j = {};
+      (j[i] = newShortcut),
+        W.accelerators._registerShortcuts(j),
+        null !== shortcutKeysObj && ((j = {}), (j[shortcutKeysObj] = newShortcut), W.accelerators._registerShortcuts(j)),
+        W.accelerators.events.register(newShortcut, null, function () {
+          functionToCall(arg);
+        });
+    } else alert('The function ' + functionToCall + ' has not been declared');
+  }
+
+  function WMEKSLoadKeyboardShortcuts(scriptName) {
+    console.log('WMEKSLoadKeyboardShortcuts(' + scriptName + ')');
+    if (localStorage[scriptName + 'KBS'])
+      for (var shortcuts = JSON.parse(localStorage[scriptName + 'KBS']), i = 0; i < shortcuts.length; i++)
+        try {
+          W.accelerators._registerShortcuts(shortcuts[i]);
+        } catch (error) {
+          console.log(error);
+        }
+  }
+
+  function WMEKSSaveKeyboardShortcuts(scriptName) {
+    console.log('WMEKSSaveKeyboardShortcuts(' + scriptName + ')');
+    var shortcuts = [];
+    for (var actionName in W.accelerators.Actions) {
+      var shortcutString = '';
+      if (W.accelerators.Actions[actionName].group == scriptName) {
+        W.accelerators.Actions[actionName].shortcut
+          ? (W.accelerators.Actions[actionName].shortcut.altKey === !0 && (shortcutString += 'A'),
+            W.accelerators.Actions[actionName].shortcut.shiftKey === !0 && (shortcutString += 'S'),
+            W.accelerators.Actions[actionName].shortcut.ctrlKey === !0 && (shortcutString += 'C'),
+            '' !== shortcutString && (shortcutString += '+'),
+            W.accelerators.Actions[actionName].shortcut.keyCode && (shortcutString += W.accelerators.Actions[actionName].shortcut.keyCode))
+          : (shortcutString = '-1');
+        var shortcutObj = {};
+        (shortcutObj[shortcutString] = W.accelerators.Actions[actionName].id), (shortcuts[shortcuts.length] = shortcutObj);
+      }
+    }
+    localStorage[scriptName + 'KBS'] = JSON.stringify(shortcuts);
+  }
+  /******************************************legacy shortcuts until here above************************************ */
 
   function getGasStationCategoryKey() {
     // Use I18n to get the correct category key for gas station
@@ -617,8 +869,8 @@ updated urls`;
       tabPane.innerHTML = `
         <div id='wme-poi-shortcuts-content'>
           <div style="padding: 8px 16px; background: #f5f5f5; border-bottom: 1px solid #ddd; margin-bottom: 10px;">
-            <div style="font-weight: bold; font-size: 14px; color: #333;">WME POI Shortcuts</div>
-            <div style="font-size: 12px; color: #666;">Version 2025.08.09.000</div>
+            <div style="font-weight: bold; font-size: 14px; color: #333;">${scriptName}</div>
+            <div style="font-size: 12px; color: #666;">${scriptVersion}</div>
           </div>
           ${buildGLEControls()}
           ${buildAllItemOptions()}
@@ -671,4 +923,9 @@ updated urls`;
   // Start the "scriptupdatemonitor"
   scriptupdatemonitor();
   console.log(`${scriptName} initialized.`);
+
+  /*Changelogs
+2025.08.10.011
+  - Legacy shortcuts key support
+  */
 })();
