@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.08.10.006
+// @version         2025.04.10.009
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -13,6 +13,8 @@
 // @require         https://greasyfork.org/scripts/24851-wazewrap/code/WazeWrap.js
 // @require         https://update.greasyfork.org/scripts/509664/WME%20Utils%20-%20Bootstrap.js
 // @require         https://update.greasyfork.org/scripts/523706/1569240/Link%20Enhancer.js
+// @downloadURL
+// @updateURL
 // ==/UserScript==
 
 /* global WazeWrap */
@@ -21,6 +23,13 @@
 (function () {
   ('use strict');
 
+  const updateMessage = `
+updated urls`;
+  const scriptName = GM_info.script.name;
+  const scriptVersion = GM_info.script.version;
+  const downloadUrl = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/code/wme-poi-shortcuts.user.js';
+  const forumURL = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/feedback';
+
   if (typeof unsafeWindow !== 'undefined' && unsafeWindow.SDK_INITIALIZED) {
     unsafeWindow.SDK_INITIALIZED.then(initScript);
   } else if (typeof window.SDK_INITIALIZED !== 'undefined') {
@@ -28,6 +37,10 @@
   } else {
     console.error('WME SDK is not available. Script will not run.');
   }
+  
+  // Inject custom CSS for grayed out disabled options
+  injectCSSWithID('pieDisabledOptionStyle', `select[id^='pieItem'] option:disabled { color: #bbb !important; background: #000000ff !important; }`);
+
   // --- GLE (Google Link Enhancer) Integration ---
   // GLE settings and messages
   let GLE = {
@@ -98,11 +111,11 @@
       linkedNearby: GLE.linkedNearby,
       linkedToXPlaces: GLE.linkedToXPlaces,
       badLink: GLE.badLink,
-      tooFar: GLE.tooFar
+      tooFar: GLE.tooFar,
     };
-    
+
     GLE = new GoogleLinkEnhancer();
-    
+
     //***** Set Google Link Enhancer strings *****
     GLE.strings.closedPlace = gleConfig.closedPlace;
     GLE.strings.multiLinked = gleConfig.multiLinked;
@@ -111,10 +124,10 @@
     GLE.strings.linkedToXPlaces = gleConfig.linkedToXPlaces;
     GLE.strings.badLink = gleConfig.badLink;
     GLE.strings.tooFar = gleConfig.tooFar;
-    
+
     // Apply the config to the GoogleLinkEnhancer instance AFTER strings are set
     GLE.showTempClosedPOIs = gleConfig.showTempClosedPOIs;
-    
+
     if (gleConfig.enabled) {
       GLE.enable();
     }
@@ -128,14 +141,6 @@
         // do something
       }
     }
-
-    // Example: add new features (category/geometry must be defined in your logic)
-    // wmeSDK.DataModel.Venues.addVenue({category, geometry});
-
-    // Example: save edits (only if you have edits to save)
-    // wmeSDK.Editing.save().then(() => {
-    //   // edits saved
-    // });
 
     // register to events
     wmeSDK.Events.once({ eventName: 'wme-ready' }).then(() => {
@@ -347,7 +352,43 @@
           .off('change.wmepoi')
           .on('change.wmepoi', function () {
             savePOIShortcutItem(i);
+            // Prevent duplicate category selection
+            if (this.id.startsWith('pieItem')) {
+              const selectedCategories = [];
+              for (let j = 1; j <= 10; j++) {
+                const val = $(`#pieItem${j}`).val();
+                if (val) selectedCategories.push(val);
+              }
+              for (let j = 1; j <= 10; j++) {
+                $(`#pieItem${j} option`).prop('disabled', false).removeAttr('title');
+              }
+              for (let j = 1; j <= 10; j++) {
+                const currentVal = $(`#pieItem${j}`).val();
+                for (const cat of selectedCategories) {
+                  if (cat !== currentVal) {
+                    $(`#pieItem${j} option[value='${cat}']`).prop('disabled', true).attr('title', 'this category is already selected.');
+                  }
+                }
+              }
+            }
           });
+      }
+      // Initial duplicate prevention
+      const selectedCategories = [];
+      for (let j = 1; j <= 10; j++) {
+        const val = $(`#pieItem${j}`).val();
+        if (val) selectedCategories.push(val);
+      }
+      for (let j = 1; j <= 10; j++) {
+        $(`#pieItem${j} option`).prop('disabled', false).removeAttr('title');
+      }
+      for (let j = 1; j <= 10; j++) {
+        const currentVal = $(`#pieItem${j}`).val();
+        for (const cat of selectedCategories) {
+          if (cat !== currentVal) {
+            $(`#pieItem${j} option[value='${cat}']`).prop('disabled', true).attr('title', 'this category is already selected.');
+          }
+        }
       }
     }, 0);
     return html;
@@ -444,7 +485,7 @@
   function getGasStationCategoryKey() {
     // Use I18n to get the correct category key for gas station
     // Fallback to 'GAS_STATION' if not found
-    let locale = (typeof I18n !== 'undefined' && I18n.currentLocale) ? I18n.currentLocale() : 'en';
+    let locale = typeof I18n !== 'undefined' && I18n.currentLocale ? I18n.currentLocale() : 'en';
     let categories = I18n?.translations?.[locale]?.venues?.categories || {};
     // Find the key for 'Gas Station' or 'Petrol Station' in the current language
     for (const key in categories) {
@@ -488,39 +529,78 @@
       `;
       $catControl.after(buttonHtml);
       // Button click handler
-      $('.noc-gas-station-btn').on('click', function() {
-        // Determine lockRank for gas station
+      $('.noc-gas-station-btn').on('click', function () {
+        // Read lockRank for GAS_STATION from localStorage config
         let lockRank = null;
+        let config = {};
+        try {
+          config = JSON.parse(localStorage.getItem('wme-poi-shortcuts-config') || '{}');
+        } catch (e) {
+          config = {};
+        }
+        let foundConfig = false;
         for (let i = 1; i <= 10; i++) {
-          const cat = $(`#pieItem${i}`).val();
-          if (cat === gasStationKey) {
-            lockRank = parseInt($(`#pieLock${i}`).val(), 10) + 1; // lock dropdown is zero-based, add 1
+          if (config[i] && config[i].category === gasStationKey) {
+            lockRank = parseInt(config[i].lock, 10);
+            console.log(`[NOC Debug] Found gas station shortcut config: slot=${i}, lockRank=${lockRank}`);
+            foundConfig = true;
             break;
           }
         }
-        // If not found in dropdown, fallback to venue.lockRank if available
-        if (!lockRank || isNaN(lockRank)) {
-          lockRank = (venue.lockRank && !isNaN(venue.lockRank)) ? venue.lockRank : 1;
+        if (!foundConfig || isNaN(lockRank)) {
+          console.log(`[NOC Debug] Using fallback lockRank. venue.lockRank=${venue.lockRank}`);
+          lockRank = venue.lockRank && !isNaN(venue.lockRank) ? venue.lockRank : 1;
         }
+        console.log(`[NOC Debug] Final lockRank to be used: ${lockRank}`);
         // Move current name to aliases if not 'NOC'
         if (venue.name !== 'NOC') {
           let aliases = Array.isArray(venue.aliases) ? venue.aliases.slice() : [];
           if (venue.name && !aliases.includes(venue.name)) {
             aliases.push(venue.name);
           }
-          wmeSDK.DataModel.Venues.updateVenue({
+          const updateObj = {
             venueId: venueId,
             name: 'NOC',
-            brand: 'Nepal Oil Corporation',
             aliases: aliases,
-            lockRank: lockRank
-          });
+          };
+          if (venue.brand !== 'Nepal Oil Corporation') {
+            updateObj.brand = 'Nepal Oil Corporation';
+            console.log('[NOC Debug] Brand updated to Nepal Oil Corporation');
+          } else {
+            console.log('[NOC Debug] Brand already Nepal Oil Corporation, skipping brand update');
+          }
+          if (venue.lockRank !== lockRank && (!venue.isLocked || venue.isLocked === false)) {
+            updateObj.lockRank = lockRank;
+            console.log(`[NOC Debug] lockRank updated to ${lockRank}`);
+          } else {
+            console.log(`[NOC Debug] lockRank already ${venue.lockRank}, skipping lockRank update`);
+          }
+          try {
+            wmeSDK.DataModel.Venues.updateVenue(updateObj);
+          } catch (err) {
+            console.warn('[NOC Debug] Update failed:', err);
+          }
         } else {
-          wmeSDK.DataModel.Venues.updateVenue({
+          const updateObj = {
             venueId: venueId,
-            brand: 'Nepal Oil Corporation',
-            lockRank: lockRank
-          });
+          };
+          if (venue.brand !== 'Nepal Oil Corporation') {
+            updateObj.brand = 'Nepal Oil Corporation';
+            console.log('[NOC Debug] Brand updated to Nepal Oil Corporation');
+          } else {
+            console.log('[NOC Debug] Brand already Nepal Oil Corporation, skipping brand update');
+          }
+          if (venue.lockRank !== lockRank && (!venue.isLocked || venue.isLocked === false)) {
+            updateObj.lockRank = lockRank;
+            console.log(`[NOC Debug] lockRank updated to ${lockRank}`);
+          } else {
+            console.log(`[NOC Debug] lockRank already ${venue.lockRank}, skipping lockRank update`);
+          }
+          try {
+            wmeSDK.DataModel.Venues.updateVenue(updateObj);
+          } catch (err) {
+            console.warn('[NOC Debug] Update failed:', err);
+          }
         }
       });
     }
@@ -579,4 +659,16 @@
       console.error('Failed to register POI Shortcuts script tab:', e);
     }
   }
+
+  function scriptupdatemonitor() {
+    if (WazeWrap?.Ready) {
+      bootstrap({ scriptUpdateMonitor: { downloadUrl } });
+      WazeWrap.Interface.ShowScriptUpdate(scriptName, scriptVersion, updateMessage, downloadUrl, forumURL);
+    } else {
+      setTimeout(scriptupdatemonitor, 250);
+    }
+  }
+  // Start the "scriptupdatemonitor"
+  scriptupdatemonitor();
+  console.log(`${scriptName} initialized.`);
 })();
