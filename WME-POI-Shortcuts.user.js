@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.08.10.005
+// @version         2025.08.10.006
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -304,10 +304,10 @@
     return html;
   }
   function buildLockLevelDropdown(itemNumber) {
-    // Show lock dropdown for all 10 items
+    // Show lock dropdown for all 10 items, values 1-5
     let html = `<select id="pieLock${itemNumber}" style="margin-left:4px;font-size:10px;height:20px;width:35px;">`;
-    for (let i = 0; i <= 4; i++) {
-      html += `<option value="${i}">${i + 1}</option>`;
+    for (let i = 1; i <= 5; i++) {
+      html += `<option value="${i}">${i}</option>`;
     }
     html += '</select>';
     return html;
@@ -490,16 +490,15 @@
       // Button click handler
       $('.noc-gas-station-btn').on('click', function() {
         // Determine lockRank for gas station
-        let lockRank = 2; // Default lock
-        let foundShortcut = false;
+        let lockRank = null;
         for (let i = 1; i <= 10; i++) {
           const cat = $(`#pieItem${i}`).val();
           if (cat === gasStationKey) {
             lockRank = parseInt($(`#pieLock${i}`).val(), 10);
-            foundShortcut = true;
             break;
           }
         }
+        if (!lockRank || isNaN(lockRank)) lockRank = 2; // fallback to 2 if not found
         // Move current name to aliases if not 'NOC'
         if (venue.name !== 'NOC') {
           let aliases = Array.isArray(venue.aliases) ? venue.aliases.slice() : [];
