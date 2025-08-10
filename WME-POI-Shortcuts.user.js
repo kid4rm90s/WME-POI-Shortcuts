@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.08.10.011
+// @version         2025.08.10.15
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -12,17 +12,17 @@
 // @grant           GM_addElement
 // @require         https://greasyfork.org/scripts/24851-wazewrap/code/WazeWrap.js
 // @require         https://update.greasyfork.org/scripts/509664/WME%20Utils%20-%20Bootstrap.js
-// @require         https://update.greasyfork.org/scripts/523706/1569240/Link%20Enhancer.js
+// @require         https://greasyfork.org/scripts/523706-google-link-enhancer/code/Link%20Enhancer.js
 // ==/UserScript==
 
 /* global WazeWrap */
 /* global bootstrap */
 
-(function () {
+https: (function () {
   ('use strict');
 
   const updateMessage = `
-Temporarily sdk based shortcuts disabled and legacy shortcuts key support added`;
+Added swap names functionality - promotes alias to primary name with arrow-up buttons next to each alias`;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
   const downloadUrl = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/code/wme-poi-shortcuts.user.js';
@@ -37,13 +37,46 @@ Temporarily sdk based shortcuts disabled and legacy shortcuts key support added`
   }
 
   // Inject custom CSS for grayed out disabled options
-  injectCSSWithID('pieDisabledOptionStyle', `select[id^='pieItem'] option:disabled { color: #bbb !important; background: #000000ff !important; }`);
+  injectCSSWithID('poiDisabledOptionStyle', `select[id^='poiItem'] option:disabled { color: #bbb !important; background: #000000ff !important; }`);
+  
+  // Inject CSS for swap names button
+  injectCSSWithID('swapNamesButtonStyle', `
+    .alias-item-action-swap {
+      margin-left: 4px !important;
+      opacity: 1 !important;
+      visibility: visible !important;
+    }
+    .alias-item-action-swap .w-icon-arrow-up {
+      font-size: 14px !important;
+      color: #ffffff !important;
+    }
+    .swap-names-container {
+      text-align: center;
+    }
+    .swap-names-container .w-icon-arrow-up {
+      margin-right: 4px;
+      color: #ffffff !important;
+    }
+  `);
 
   // --- GLE (Google Link Enhancer) Integration ---
   // GLE settings and messages
+  // Load GLE enabled state from localStorage
+  let gleEnabled = false;
+  let gleShowTempClosed = true;
+  try {
+    gleEnabled = JSON.parse(localStorage.getItem('wme-poi-shortcuts-gle-enabled'));
+  } catch (e) {
+    gleEnabled = false;
+  }
+  try {
+    gleShowTempClosed = JSON.parse(localStorage.getItem('wme-poi-shortcuts-gle-show-temp-closed'));
+  } catch (e) {
+    gleShowTempClosed = true;
+  }
   let GLE = {
-    enabled: false,
-    showTempClosedPOIs: true,
+    enabled: gleEnabled,
+    showTempClosedPOIs: gleShowTempClosed,
     enable() {
       this.enabled = true;
       ToggleExternalProvidersCSS(true);
@@ -75,9 +108,9 @@ Temporarily sdk based shortcuts disabled and legacy shortcuts key support added`
 
   // Toggle external providers CSS
   function ToggleExternalProvidersCSS(truthiness) {
-    if (truthiness) injectCSSWithID('pieExternalProvidersTweaks', '#edit-panel .external-providers-view .select2-container {width:90%; margin-bottom:2px;}');
+    if (truthiness) injectCSSWithID('poiExternalProvidersTweaks', '#edit-panel .external-providers-view .select2-container {width:90%; margin-bottom:2px;}');
     else {
-      var styles = document.getElementById('pieExternalProvidersTweaks');
+      var styles = document.getElementById('poiExternalProvidersTweaks');
       if (styles) styles.parentNode.removeChild(styles);
     }
   }
@@ -85,12 +118,9 @@ Temporarily sdk based shortcuts disabled and legacy shortcuts key support added`
   // Add GLE controls to the sidebar UI
   function buildGLEControls() {
     return `
-    <div style="margin:6px 0 10px 0; padding:4px 8px; background:#f8f8f8; border-radius:4px;">
+    <div style="margin:6px 0 10px 0; padding:4px 8px; background:transparent; border-radius:4px;">
       <label style="font-size:10px; font-weight:bold;">
         <input type="checkbox" id="_cbEnableGLE" ${GLE && GLE.enabled ? 'checked' : ''} /> Enable Google Link Enhancer
-      </label><br>
-      <label style="font-size:10px; margin-left:16px;">
-        <input type="checkbox" id="_cbGLEShowTempClosed" ${GLE && GLE.showTempClosedPOIs ? 'checked' : ''} ${GLE && !GLE.enabled ? 'disabled' : ''} /> Highlight temporarily closed Places
       </label>
     </div>
   `;
@@ -163,6 +193,7 @@ Temporarily sdk based shortcuts disabled and legacy shortcuts key support added`
       eventName: 'wme-selection-changed',
       eventHandler: () => {
         injectNOCButtonIfNepalGasStation(wmeSDK);
+        injectSwapNamesButton(wmeSDK);
       },
     });
   }
@@ -181,18 +212,18 @@ Temporarily sdk based shortcuts disabled and legacy shortcuts key support added`
   function savePOIShortcutItem(itemNumber) {
     const config = getPOIShortcutsConfig();
     config[itemNumber] = {
-      category: $(`#pieItem${itemNumber}`).val(),
-      lock: $(`#pieLock${itemNumber}`).val(),
-      geometry: $(`#pieGeom${itemNumber}`).val(),
+      category: $(`#poiItem${itemNumber}`).val(),
+      lock: $(`#poiLock${itemNumber}`).val(),
+      geometry: $(`#poiGeom${itemNumber}`).val(),
     };
     setPOIShortcutsConfig(config);
   }
   function loadPOIShortcutItem(itemNumber) {
     const config = getPOIShortcutsConfig();
     if (config[itemNumber]) {
-      $(`#pieItem${itemNumber}`).val(config[itemNumber].category);
-      $(`#pieLock${itemNumber}`).val(config[itemNumber].lock);
-      $(`#pieGeom${itemNumber}`).val(config[itemNumber].geometry);
+      $(`#poiItem${itemNumber}`).val(config[itemNumber].category);
+      $(`#poiLock${itemNumber}`).val(config[itemNumber].lock);
+      $(`#poiGeom${itemNumber}`).val(config[itemNumber].geometry);
     }
   }
 
@@ -286,7 +317,7 @@ Temporarily sdk based shortcuts disabled and legacy shortcuts key support added`
         subs: ['AIRPORT', 'BUS_STATION', 'FERRY_PIER', 'SEAPORT_MARINA_HARBOR', 'SUBWAY_STATION', 'TRAIN_STATION', 'BRIDGE', 'TUNNEL', 'TAXI_STATION', 'JUNCTION_INTERCHANGE', 'REST_AREAS', 'CARPOOL_SPOT'],
       },
     ];
-    let html = `<select id="pieItem${itemNumber}" style="font-size:10px;height:20px;width:100%;max-width:200px;margin:2px 0;">`;
+    let html = `<select id="poiItem${itemNumber}" style="font-size:10px;height:20px;width:100%;max-width:200px;margin:2px 0;">`;
     VENUE_CATEGORIES.forEach((cat) => {
       try {
         const categoryName = I18n?.translations?.[I18n.currentLocale()]?.venues?.categories?.[cat.key] || cat.key;
@@ -308,7 +339,7 @@ Temporarily sdk based shortcuts disabled and legacy shortcuts key support added`
   }
   function buildLockLevelDropdown(itemNumber) {
     // Show lock dropdown for all 10 items
-    let html = `<select id="pieLock${itemNumber}" style="margin-left:4px;font-size:10px;height:20px;width:35px;">`;
+    let html = `<select id="poiLock${itemNumber}" style="margin-left:4px;font-size:10px;height:20px;width:35px;">`;
     for (let i = 0; i <= 4; i++) {
       html += `<option value="${i}">${i + 1}</option>`;
     }
@@ -317,13 +348,13 @@ Temporarily sdk based shortcuts disabled and legacy shortcuts key support added`
   }
   function buildGeometryTypeDropdown(itemNumber) {
     // Dropdown for geometry type: Point or Area
-    return `<select id="pieGeom${itemNumber}" style="margin-left:4px;font-size:10px;height:20px;width:55px;">
+    return `<select id="poiGeom${itemNumber}" style="margin-left:4px;font-size:10px;height:20px;width:55px;">
         <option value="area">Area</option>
         <option value="point">Point</option>
     </select>`;
   }
   function buildItemOption(itemNumber) {
-    var $section = $('<div>', { style: 'padding:4px 8px;font-size:10px;', id: 'piePlaceCat' + itemNumber });
+    var $section = $('<div>', { style: 'padding:4px 8px;font-size:10px;', id: 'poiPlaceCat' + itemNumber });
     $section.html(
       [
         `<span style="font-size:10px;font-weight:bold;">Item ${itemNumber}</span>`,
@@ -331,7 +362,7 @@ Temporarily sdk based shortcuts disabled and legacy shortcuts key support added`
         `<div style="display:flex;align-items:center;gap:6px;margin:3px 0 0 0;">
             <label style="font-size:10px;min-width:28px;">Lock</label> ${buildLockLevelDropdown(itemNumber)}
             <label style="font-size:10px;min-width:40px;">Geometry</label> ${buildGeometryTypeDropdown(itemNumber)}
-            <label style="font-size:10px;min-width:45px;">Shortcut</label> <input type="text" id="pieShortcut${itemNumber}" value="" placeholder="(none)" disabled style="margin-left:2px;width:60px;font-size:10px;height:18px;" />
+            <label style="font-size:10px;min-width:45px;">Shortcut</label> <input type="text" id="poiShortcut${itemNumber}" value="" placeholder="(none)" disabled style="margin-left:2px;width:60px;font-size:10px;height:18px;" />
         </div>`,
       ].join(' ')
     );
@@ -348,28 +379,28 @@ Temporarily sdk based shortcuts disabled and legacy shortcuts key support added`
         //legacy shortcuts key added from here
         // Populate shortcut input with the actual shortcut key
         const shortcutKey = i === 10 ? 'Ctrl+0' : `Ctrl+${i}`;
-        $(`#pieShortcut${i}`).val(shortcutKey);
+        $(`#poiShortcut${i}`).val(shortcutKey);
         // legacy shortcuts key added until above
         // Save on change
-        $(`#pieItem${i},#pieLock${i},#pieGeom${i}`)
+        $(`#poiItem${i},#poiLock${i},#poiGeom${i}`)
           .off('change.wmepoi')
           .on('change.wmepoi', function () {
             savePOIShortcutItem(i);
             // Prevent duplicate category selection
-            if (this.id.startsWith('pieItem')) {
+            if (this.id.startsWith('poiItem')) {
               const selectedCategories = [];
               for (let j = 1; j <= 10; j++) {
-                const val = $(`#pieItem${j}`).val();
+                const val = $(`#poiItem${j}`).val();
                 if (val) selectedCategories.push(val);
               }
               for (let j = 1; j <= 10; j++) {
-                $(`#pieItem${j} option`).prop('disabled', false).removeAttr('title');
+                $(`#poiItem${j} option`).prop('disabled', false).removeAttr('title');
               }
               for (let j = 1; j <= 10; j++) {
-                const currentVal = $(`#pieItem${j}`).val();
+                const currentVal = $(`#poiItem${j}`).val();
                 for (const cat of selectedCategories) {
                   if (cat !== currentVal) {
-                    $(`#pieItem${j} option[value='${cat}']`).prop('disabled', true).attr('title', 'this category is already selected.');
+                    $(`#poiItem${j} option[value='${cat}']`).prop('disabled', true).attr('title', 'this category is already selected.');
                   }
                 }
               }
@@ -379,17 +410,17 @@ Temporarily sdk based shortcuts disabled and legacy shortcuts key support added`
       // Initial duplicate prevention
       const selectedCategories = [];
       for (let j = 1; j <= 10; j++) {
-        const val = $(`#pieItem${j}`).val();
+        const val = $(`#poiItem${j}`).val();
         if (val) selectedCategories.push(val);
       }
       for (let j = 1; j <= 10; j++) {
-        $(`#pieItem${j} option`).prop('disabled', false).removeAttr('title');
+        $(`#poiItem${j} option`).prop('disabled', false).removeAttr('title');
       }
       for (let j = 1; j <= 10; j++) {
-        const currentVal = $(`#pieItem${j}`).val();
+        const currentVal = $(`#poiItem${j}`).val();
         for (const cat of selectedCategories) {
           if (cat !== currentVal) {
-            $(`#pieItem${j} option[value='${cat}']`).prop('disabled', true).attr('title', 'this category is already selected.');
+            $(`#poiItem${j} option[value='${cat}']`).prop('disabled', true).attr('title', 'this category is already selected.');
           }
         }
       }
@@ -418,9 +449,9 @@ Temporarily sdk based shortcuts disabled and legacy shortcuts key support added`
       wmeSDK.Shortcuts.createShortcut({
         callback: () => {
           // Get selected values from the UI for this item
-          const cat = $(`#pieItem${i}`).val();
-          const lock = parseInt($(`#pieLock${i}`).val(), 10);
-          const geomType = $(`#pieGeom${i}`).val();
+          const cat = $(`#poiItem${i}`).val();
+          const lock = parseInt($(`#poiLock${i}`).val(), 10);
+          const geomType = $(`#poiGeom${i}`).val();
           // Geometry: area = drawPolygon, point = drawPoint
           let drawPromise = geomType === 'point' ? wmeSDK.Map.drawPoint() : wmeSDK.Map.drawPolygon();
           drawPromise.then((geometry) => {
@@ -631,9 +662,9 @@ Temporarily sdk based shortcuts disabled and legacy shortcuts key support added`
   function createPOIFromShortcut(slotNumber, wmeSDK) {
     try {
       // Get selected values from the UI for this item
-      const cat = $(`#pieItem${slotNumber}`).val();
-      const lock = parseInt($(`#pieLock${slotNumber}`).val(), 10);
-      const geomType = $(`#pieGeom${slotNumber}`).val();
+      const cat = $(`#poiItem${slotNumber}`).val();
+      const lock = parseInt($(`#poiLock${slotNumber}`).val(), 10);
+      const geomType = $(`#poiGeom${slotNumber}`).val();
 
       if (!cat || cat === '') {
         console.warn(`POI Shortcut ${slotNumber}: No category selected`);
@@ -747,6 +778,137 @@ Temporarily sdk based shortcuts disabled and legacy shortcuts key support added`
     }
     // Fallback to 'GAS_STATION'
     return 'GAS_STATION';
+  }
+
+  function swapPrimaryAndAliasNames(wmeSDK, aliasIndex = 0) {
+    // Only run if a venue is selected
+    const selection = wmeSDK.Editing.getSelection();
+    if (!selection || selection.objectType !== 'venue' || !selection.ids || selection.ids.length !== 1) {
+      console.warn('No venue selected for name swapping');
+      return;
+    }
+
+    const venueId = selection.ids[0];
+    const venue = wmeSDK.DataModel.Venues.getById({ venueId });
+    
+    if (!venue) {
+      console.warn('Venue not found');
+      return;
+    }
+
+    // Check if venue has a name and at least one alias
+    if (!venue.name || !venue.aliases || venue.aliases.length === 0) {
+      console.warn('Venue must have both a primary name and at least one alias to swap');
+      return;
+    }
+
+    // Validate alias index
+    if (aliasIndex < 0 || aliasIndex >= venue.aliases.length) {
+      console.warn(`Invalid alias index: ${aliasIndex}. Available aliases: ${venue.aliases.length}`);
+      return;
+    }
+
+    // Get current primary name and target alias
+    const currentPrimaryName = venue.name;
+    const targetAlias = venue.aliases[aliasIndex];
+    
+    // Create new aliases array with the old primary name replacing the target alias
+    const newAliases = [...venue.aliases];
+    newAliases[aliasIndex] = currentPrimaryName;
+
+    try {
+      // Update venue with swapped names
+      wmeSDK.DataModel.Venues.updateVenue({
+        venueId: venueId,
+        name: targetAlias,
+        aliases: newAliases,
+      });
+      
+      console.log(`Swapped names: "${currentPrimaryName}" ↔ "${targetAlias}" (alias index: ${aliasIndex})`);
+    } catch (error) {
+      console.error('Error swapping venue names:', error);
+    }
+  }
+
+  function injectSwapNamesButton(wmeSDK) {
+    // Only run if a venue is selected
+    const selection = wmeSDK.Editing.getSelection();
+    if (!selection || selection.objectType !== 'venue' || !selection.ids || selection.ids.length !== 1) return;
+
+    const venueId = selection.ids[0];
+    const venue = wmeSDK.DataModel.Venues.getById({ venueId });
+    
+    if (!venue) return;
+
+    // Wait for the venue aliases section to exist
+    function tryInjectSwapButton() {
+      // Look for the aliases list and inject button into ALL alias items' actions containers
+      const $aliasesList = $('.aliases-list');
+      let foundAliases = false;
+      
+      if ($aliasesList.length > 0) {
+        // Find ALL alias items and add swap button to each
+        $aliasesList.find('wz-list-item').each(function (index) {
+          const $aliasItem = $(this);
+          const $actionsContainer = $aliasItem.find('div[slot="actions"].alias-item-actions');
+          
+          if ($actionsContainer.length > 0) {
+            // Check if swap button already exists in this specific alias item
+            if ($actionsContainer.find('.swap-names-btn').length === 0) {
+              foundAliases = true;
+              
+              // Check if venue has both name and aliases before showing button
+              const hasSwappableNames = venue.name && venue.aliases && venue.aliases.length > 0;
+              if (!hasSwappableNames) return true; // Continue to next iteration
+              
+              // Create swap button for this specific alias (swap with the alias at this index)
+              const buttonHtml = `
+                <wz-button color="blue" size="sm" class="alias-item-action alias-item-action-swap swap-names-btn" title="Swap primary name with this alias" data-alias-index="${index}">
+                  <i class="w-icon w-icon-arrow-up alias-item-action-icon"></i>
+                </wz-button>
+              `;
+              
+              $actionsContainer.prepend(buttonHtml);
+            }
+          }
+        });
+      }
+      
+      // Fallback method if no aliases found
+      if (!foundAliases) {
+        const $nameField = $('input[placeholder*="name" i], input[name*="name" i], .venue-name input, .place-name input');
+        if ($nameField.length > 0) {
+          const $targetContainer = $nameField.closest('.form-group, .field-group, .control-group').first();
+          if ($targetContainer.length > 0 && $('.swap-names-btn').length === 0) {
+            const hasSwappableNames = venue.name && venue.aliases && venue.aliases.length > 0;
+            if (hasSwappableNames) {
+              const buttonHtml = `
+                <div class='form-group swap-names-container' style='margin: 5px 0; display: inline-block;'>
+                  <wz-button color="blue" size="sm" class="swap-names-btn" title="Swap primary name with first alias" data-alias-index="0">
+                    <i class="w-icon w-icon-arrow-up"></i> Swap Names
+                  </wz-button>
+                </div>
+              `;
+              $targetContainer.after(buttonHtml);
+              foundAliases = true;
+            }
+          }
+        }
+      }
+      
+      if (!foundAliases) {
+        setTimeout(tryInjectSwapButton, 100);
+        return;
+      }
+      
+      // Button click handler for all swap buttons
+      $('.swap-names-btn').off('click.swapnames').on('click.swapnames', function (e) {
+        e.preventDefault();
+        const aliasIndex = parseInt($(this).attr('data-alias-index') || '0', 10);
+        swapPrimaryAndAliasNames(wmeSDK, aliasIndex);
+      });
+    }
+    tryInjectSwapButton();
   }
 
   function injectNOCButtonIfNepalGasStation(wmeSDK) {
@@ -878,32 +1040,36 @@ Temporarily sdk based shortcuts disabled and legacy shortcuts key support added`
       // Add event listeners for GLE controls
       setTimeout(() => {
         const cbEnableGLE = document.getElementById('_cbEnableGLE');
-        const cbGLEShowTempClosed = document.getElementById('_cbGLEShowTempClosed');
         if (cbEnableGLE) {
+          // Restore checkbox state from localStorage
+          cbEnableGLE.checked = !!gleEnabled;
           cbEnableGLE.addEventListener('change', function () {
+            // Save state to localStorage
+            localStorage.setItem('wme-poi-shortcuts-gle-enabled', JSON.stringify(this.checked));
             if (this.checked) {
-              GLE.enable();
+              // Enable GLE functionality
+              if (GLE && typeof GLE.enable === 'function') {
+                GLE.enable();
+              }
             } else {
-              GLE.disable();
+              // Disable GLE functionality completely
+              if (GLE && typeof GLE.disable === 'function') {
+                GLE.disable();
+              }
               // Force map refresh to remove lingering highlights
               setTimeout(() => {
                 if (typeof W !== 'undefined' && W.map && W.map.getOLMap()) {
-                  W.map.getOLMap().redraw();
+                  const olMap = W.map.getOLMap();
+                  if (olMap && typeof olMap.redraw === 'function') {
+                    olMap.redraw();
+                  }
                 }
               }, 100);
             }
-            cbGLEShowTempClosed.disabled = !this.checked;
-          });
-        }
-        if (cbGLEShowTempClosed) {
-          cbGLEShowTempClosed.addEventListener('change', function () {
-            GLE.showTempClosedPOIs = this.checked;
-            // Force map refresh when toggling temp closed highlights
-            setTimeout(() => {
-              if (typeof W !== 'undefined' && W.map && W.map.getOLMap()) {
-                W.map.getOLMap().redraw();
-              }
-            }, 100);
+            // Update GLE enabled state
+            if (GLE) {
+              GLE.enabled = this.checked;
+            }
           });
         }
       }, 0);
@@ -925,6 +1091,12 @@ Temporarily sdk based shortcuts disabled and legacy shortcuts key support added`
   console.log(`${scriptName} initialized.`);
 
   /*Changelogs
+2025.08.10.15
+  - Enhanced swap names functionality with arrow-up buttons for all aliases
+  - Improved button visibility with white icons and proper positioning before delete buttons
+  - Added support for swapping primary name with any specific alias (not just first one)
+2025.08.10.14
+  - Added swap names functionality between primary and alias names using WME SDK
 2025.08.10.011
   - Legacy shortcuts key support
   */
