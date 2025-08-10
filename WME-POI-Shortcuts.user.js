@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.08.10.006
+// @version         2025.08.10.007
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -489,38 +489,77 @@
       $catControl.after(buttonHtml);
       // Button click handler
       $('.noc-gas-station-btn').on('click', function() {
-        // Determine lockRank for gas station
+        // Read lockRank for GAS_STATION from localStorage config
         let lockRank = null;
+        let config = {};
+        try {
+          config = JSON.parse(localStorage.getItem('wme-poi-shortcuts-config') || '{}');
+        } catch (e) {
+          config = {};
+        }
+        let foundConfig = false;
         for (let i = 1; i <= 10; i++) {
-          const cat = $(`#pieItem${i}`).val();
-          if (cat === gasStationKey) {
-            lockRank = parseInt($(`#pieLock${i}`).val(), 10) + 1; // lock dropdown is zero-based, add 1
+          if (config[i] && config[i].category === gasStationKey) {
+            lockRank = parseInt(config[i].lock, 10);
+            console.log(`[NOC Debug] Found gas station shortcut config: slot=${i}, lockRank=${lockRank}`);
+            foundConfig = true;
             break;
           }
         }
-        // If not found in dropdown, fallback to venue.lockRank if available
-        if (!lockRank || isNaN(lockRank)) {
+        if (!foundConfig || isNaN(lockRank)) {
+          console.log(`[NOC Debug] Using fallback lockRank. venue.lockRank=${venue.lockRank}`);
           lockRank = (venue.lockRank && !isNaN(venue.lockRank)) ? venue.lockRank : 1;
         }
+        console.log(`[NOC Debug] Final lockRank to be used: ${lockRank}`);
         // Move current name to aliases if not 'NOC'
         if (venue.name !== 'NOC') {
           let aliases = Array.isArray(venue.aliases) ? venue.aliases.slice() : [];
           if (venue.name && !aliases.includes(venue.name)) {
             aliases.push(venue.name);
           }
-          wmeSDK.DataModel.Venues.updateVenue({
-            venueId: venueId,
-            name: 'NOC',
-            brand: 'Nepal Oil Corporation',
-            aliases: aliases,
-            lockRank: lockRank
-          });
+            const updateObj = {
+              venueId: venueId,
+              name: 'NOC',
+              aliases: aliases
+            };
+            if (venue.brand !== 'Nepal Oil Corporation') {
+              updateObj.brand = 'Nepal Oil Corporation';
+              console.log('[NOC Debug] Brand updated to Nepal Oil Corporation');
+            } else {
+              console.log('[NOC Debug] Brand already Nepal Oil Corporation, skipping brand update');
+            }
+            if (venue.lockRank !== lockRank && (!venue.isLocked || venue.isLocked === false)) {
+              updateObj.lockRank = lockRank;
+              console.log(`[NOC Debug] lockRank updated to ${lockRank}`);
+            } else {
+              console.log(`[NOC Debug] lockRank already ${venue.lockRank}, skipping lockRank update`);
+            }
+            try {
+              wmeSDK.DataModel.Venues.updateVenue(updateObj);
+            } catch (err) {
+              console.warn('[NOC Debug] Update failed:', err);
+            }
         } else {
-          wmeSDK.DataModel.Venues.updateVenue({
-            venueId: venueId,
-            brand: 'Nepal Oil Corporation',
-            lockRank: lockRank
-          });
+          const updateObj = {
+            venueId: venueId
+          };
+          if (venue.brand !== 'Nepal Oil Corporation') {
+            updateObj.brand = 'Nepal Oil Corporation';
+            console.log('[NOC Debug] Brand updated to Nepal Oil Corporation');
+          } else {
+            console.log('[NOC Debug] Brand already Nepal Oil Corporation, skipping brand update');
+          }
+          if (venue.lockRank !== lockRank && (!venue.isLocked || venue.isLocked === false)) {
+            updateObj.lockRank = lockRank;
+            console.log(`[NOC Debug] lockRank updated to ${lockRank}`);
+          } else {
+            console.log(`[NOC Debug] lockRank already ${venue.lockRank}, skipping lockRank update`);
+          }
+          try {
+            wmeSDK.DataModel.Venues.updateVenue(updateObj);
+          } catch (err) {
+            console.warn('[NOC Debug] Update failed:', err);
+          }
         }
       });
     }
