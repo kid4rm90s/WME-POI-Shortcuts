@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.08.10.008
+// @version         2025.04.10.009
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -24,12 +24,11 @@
   ('use strict');
 
   const updateMessage = `
-<b>2.5.9.6 - 2025-08-05</b><br>
-- Bug fix: Enhanced "Copy Connected Segment Attribute" logic.<br>`;
+updated urls`;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
-  const downloadUrl = 'https://greasyfork.org/scripts/528552-wme-ezroad-mod/code/wme-ezroad-mod.user.js';
-  const forumURL = 'https://greasyfork.org/scripts/528552-wme-ezroad-mod/feedback';
+  const downloadUrl = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/code/wme-poi-shortcuts.user.js';
+  const forumURL = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/feedback';
 
   if (typeof unsafeWindow !== 'undefined' && unsafeWindow.SDK_INITIALIZED) {
     unsafeWindow.SDK_INITIALIZED.then(initScript);
