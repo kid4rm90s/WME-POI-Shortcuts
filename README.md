@@ -42,7 +42,7 @@ To install this script, you will need a userscript manager like **Tampermonkey**
     * **Firefox:** Install [Tampermonkey](https://www.tampermonkey.net/) or [Greasemonkey](https://addons.mozilla.org/en-US/firefox/addon/greasemonkey/).
 
 2. **Install the WME POI Shortcuts Script:**
-    * Click on the following link to install: [**(https://greasyfork.org/en/scripts/XXXXX-wme-poi-shortcuts)**]
+    * Click on the following link to install: [**(https://greasyfork.org/en/scripts/545278-wme-poi-shortcuts)**]
     * Your userscript manager should prompt you to install. Click **"Install"** to confirm.
 
 3. **Verify Installation:**
