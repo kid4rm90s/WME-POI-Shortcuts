@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.08.10.15
+// @version         2025.08.11.03
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -21,8 +21,122 @@
 https: (function () {
   ('use strict');
 
+  // Gas Station Brand Names for Nepal and Pakistan
+  const GAS_STATION_BRANDNAME = {
+    Nepal: {
+      countryCode: 'NP',
+      brandnames: [
+        {
+          primaryName: 'NOC',
+          brand: 'Nepal Oil Corporation',
+          website: 'noc.org.np',
+        },
+      ],
+    },
+    Pakistan: {
+      countryCode: 'PK',
+      brandnames: [
+        {
+          primaryName: 'Askar 1',
+          brand: 'Askar 1',
+          aliases: ['Askar 1 Petrol Pump'],
+          website: 'askaroil.com.pk',
+        },
+        {
+          primaryName: 'Attock',
+          brand: 'Attock',
+          aliases: ['Attock Petrol Pump'],
+          website: 'apl.com.pk',
+        },
+        {
+          primaryName: 'Be Energy',
+          brand: 'BE Energy',
+          aliases: ['Be Petrol Pump'],
+          website: 'beenergy.com.pk',
+        },
+        {
+          primaryName: 'Byco',
+          brand: 'Byco',
+          aliases: ['Byco Petrol Pump'],
+          website: 'byco.com.pk',
+        },
+        {
+          primaryName: 'Caltex',
+          brand: 'Caltex',
+          aliases: ['Caltex Petrol Pump'],
+          website: 'caltex.com',
+        },
+        {
+          primaryName: 'Go',
+          brand: 'Go',
+          aliases: ['Go Petrol Pump'],
+          website: 'gno.com.pk',
+        },
+        {
+          primaryName: 'Hascol',
+          brand: 'Hascol',
+          aliases: [''],
+          website: 'hascol.com',
+        },
+        {
+          primaryName: 'LaGuardia',
+          brand: 'LaGuardia',
+          aliases: ['LaGuardia'],
+          website: 'laguardia-group.com',
+        },
+        {
+          primaryName: 'N3',
+          brand: 'N3',
+          aliases: ['N3 Petrol Pump'],
+          website: 'n3.com.pk',
+        },
+        {
+          primaryName: 'PSO',
+          brand: 'Pakistan State Oil',
+          aliases: ['PSO Petrol Pump', 'Pakistan State Oil'],
+          website: 'psopk.com',
+        },
+        {
+          primaryName: 'Puma Energy',
+          brand: 'Puma',
+          aliases: ['Puma'],
+          website: 'pumaenergy.com',
+        },
+        {
+          primaryName: 'Shell',
+          brand: 'Shell',
+          aliases: ['Shell'],
+          website: 'shell.com.pk',
+        },
+        {
+          primaryName: 'Taj Petroleum',
+          brand: 'TAJ',
+          aliases: ['Taj Petrol Pump'],
+          website: 'tajcorporation.com',
+        },
+        {
+          primaryName: 'Total Parco',
+          brand: 'TOTAL - PARCO',
+          aliases: ['Total Parco', 'Total', 'Total Petrol Pump'],
+          website: 'totalparco.com.pk',
+        },
+        {
+          primaryName: 'Zoom',
+          brand: 'Zoom',
+          aliases: ['Zoom Petroleum', 'Zoom Petrol Pump'],
+          website: 'zoom.org.pk',
+        },
+        {
+          primaryName: 'Target',
+          brand: null,
+          aliases: ['Target Petrol Pump'],
+          website: 'targetlubricants.com',
+        },
+      ],
+    },
+  };
   const updateMessage = `
-Added swap names functionality - promotes alias to primary name with arrow-up buttons next to each alias`;
+Added support for updating Pakistan Petroleum brands using buttons.`;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
   const downloadUrl = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/code/wme-poi-shortcuts.user.js';
@@ -38,9 +152,11 @@ Added swap names functionality - promotes alias to primary name with arrow-up bu
 
   // Inject custom CSS for grayed out disabled options
   injectCSSWithID('poiDisabledOptionStyle', `select[id^='poiItem'] option:disabled { color: #bbb !important; background: #000000ff !important; }`);
-  
+
   // Inject CSS for swap names button
-  injectCSSWithID('swapNamesButtonStyle', `
+  injectCSSWithID(
+    'swapNamesButtonStyle',
+    `
     .alias-item-action-swap {
       margin-left: 4px !important;
       opacity: 1 !important;
@@ -57,7 +173,8 @@ Added swap names functionality - promotes alias to primary name with arrow-up bu
       margin-right: 4px;
       color: #ffffff !important;
     }
-  `);
+  `
+  );
 
   // --- GLE (Google Link Enhancer) Integration ---
   // GLE settings and messages
@@ -362,7 +479,7 @@ Added swap names functionality - promotes alias to primary name with arrow-up bu
         `<div style="display:flex;align-items:center;gap:6px;margin:3px 0 0 0;">
             <label style="font-size:10px;min-width:28px;">Lock</label> ${buildLockLevelDropdown(itemNumber)}
             <label style="font-size:10px;min-width:40px;">Geometry</label> ${buildGeometryTypeDropdown(itemNumber)}
-            <label style="font-size:10px;min-width:45px;">Shortcut</label> <input type="text" id="poiShortcut${itemNumber}" value="" placeholder="(none)" disabled style="margin-left:2px;width:60px;font-size:10px;height:18px;" />
+            />
         </div>`,
       ].join(' ')
     );
@@ -373,6 +490,7 @@ Added swap names functionality - promotes alias to primary name with arrow-up bu
     for (let i = 1; i <= 10; i++) {
       html += buildItemOption(i);
     }
+    html += `<div style='font-size:10px;color:#888;margin-top:8px;'>You can bind keyboard shortcuts using WME's native shortcuts section.</div>`;
     setTimeout(() => {
       for (let i = 1; i <= 10; i++) {
         loadPOIShortcutItem(i);
@@ -790,7 +908,7 @@ Added swap names functionality - promotes alias to primary name with arrow-up bu
 
     const venueId = selection.ids[0];
     const venue = wmeSDK.DataModel.Venues.getById({ venueId });
-    
+
     if (!venue) {
       console.warn('Venue not found');
       return;
@@ -811,7 +929,7 @@ Added swap names functionality - promotes alias to primary name with arrow-up bu
     // Get current primary name and target alias
     const currentPrimaryName = venue.name;
     const targetAlias = venue.aliases[aliasIndex];
-    
+
     // Create new aliases array with the old primary name replacing the target alias
     const newAliases = [...venue.aliases];
     newAliases[aliasIndex] = currentPrimaryName;
@@ -823,7 +941,7 @@ Added swap names functionality - promotes alias to primary name with arrow-up bu
         name: targetAlias,
         aliases: newAliases,
       });
-      
+
       console.log(`Swapped names: "${currentPrimaryName}" ↔ "${targetAlias}" (alias index: ${aliasIndex})`);
     } catch (error) {
       console.error('Error swapping venue names:', error);
@@ -837,7 +955,7 @@ Added swap names functionality - promotes alias to primary name with arrow-up bu
 
     const venueId = selection.ids[0];
     const venue = wmeSDK.DataModel.Venues.getById({ venueId });
-    
+
     if (!venue) return;
 
     // Wait for the venue aliases section to exist
@@ -845,35 +963,35 @@ Added swap names functionality - promotes alias to primary name with arrow-up bu
       // Look for the aliases list and inject button into ALL alias items' actions containers
       const $aliasesList = $('.aliases-list');
       let foundAliases = false;
-      
+
       if ($aliasesList.length > 0) {
         // Find ALL alias items and add swap button to each
         $aliasesList.find('wz-list-item').each(function (index) {
           const $aliasItem = $(this);
           const $actionsContainer = $aliasItem.find('div[slot="actions"].alias-item-actions');
-          
+
           if ($actionsContainer.length > 0) {
             // Check if swap button already exists in this specific alias item
             if ($actionsContainer.find('.swap-names-btn').length === 0) {
               foundAliases = true;
-              
+
               // Check if venue has both name and aliases before showing button
               const hasSwappableNames = venue.name && venue.aliases && venue.aliases.length > 0;
               if (!hasSwappableNames) return true; // Continue to next iteration
-              
+
               // Create swap button for this specific alias (swap with the alias at this index)
               const buttonHtml = `
                 <wz-button color="blue" size="sm" class="alias-item-action alias-item-action-swap swap-names-btn" title="Swap primary name with this alias" data-alias-index="${index}">
                   <i class="w-icon w-icon-arrow-up alias-item-action-icon"></i>
                 </wz-button>
               `;
-              
+
               $actionsContainer.prepend(buttonHtml);
             }
           }
         });
       }
-      
+
       // Fallback method if no aliases found
       if (!foundAliases) {
         const $nameField = $('input[placeholder*="name" i], input[name*="name" i], .venue-name input, .place-name input');
@@ -895,18 +1013,20 @@ Added swap names functionality - promotes alias to primary name with arrow-up bu
           }
         }
       }
-      
+
       if (!foundAliases) {
         setTimeout(tryInjectSwapButton, 100);
         return;
       }
-      
+
       // Button click handler for all swap buttons
-      $('.swap-names-btn').off('click.swapnames').on('click.swapnames', function (e) {
-        e.preventDefault();
-        const aliasIndex = parseInt($(this).attr('data-alias-index') || '0', 10);
-        swapPrimaryAndAliasNames(wmeSDK, aliasIndex);
-      });
+      $('.swap-names-btn')
+        .off('click.swapnames')
+        .on('click.swapnames', function (e) {
+          e.preventDefault();
+          const aliasIndex = parseInt($(this).attr('data-alias-index') || '0', 10);
+          swapPrimaryAndAliasNames(wmeSDK, aliasIndex);
+        });
     }
     tryInjectSwapButton();
   }
@@ -921,29 +1041,52 @@ Added swap names functionality - promotes alias to primary name with arrow-up bu
     const topCountry = wmeSDK.DataModel.Countries.getTopCountry();
     const gasStationKey = getGasStationCategoryKey();
 
-    // Check if venue.categories (array) contains the gas station key
-    const isNepalGasStation = !!venue && !!topCountry && (topCountry.name === 'Nepal' || topCountry.code === 'NP') && Array.isArray(venue.categories) && venue.categories.includes(gasStationKey);
-    if (!isNepalGasStation) return;
+    // Check if venue.categories (array) contains the gas station key and country is Nepal or Pakistan
+    const isNepal = !!topCountry && (topCountry.name === 'Nepal' || topCountry.code === 'NP');
+    const isPakistan = !!topCountry && (topCountry.name === 'Pakistan' || topCountry.code === 'PK');
+    const isGasStation = !!venue && Array.isArray(venue.categories) && venue.categories.includes(gasStationKey);
+    if (!(isGasStation && (isNepal || isPakistan))) return;
 
-    // Wait for the categories-control element to exist
-    function tryInject() {
+    // Show brand buttons for Nepal and Pakistan gas stations
+    function tryInjectBrandButtons() {
       const $catControl = $('.categories-control');
       if ($catControl.length === 0) {
-        setTimeout(tryInject, 150); // Retry after 150ms
+        setTimeout(tryInjectBrandButtons, 150);
         return;
       }
-      // Prevent duplicate button
-      if ($('.noc-gas-station-btn').length > 0) return;
-      // Inject button after categories-control
-      const buttonHtml = `
-        <div class='form-group e85 e85-e85-14'>
-          <label class='control-label'>Setup Station as</label>
-          <button class='waze-btn waze-btn-small waze-btn-white e85 noc-gas-station-btn'>NOC</button>
-        </div>
-      `;
-      $catControl.after(buttonHtml);
+      // Prevent duplicate buttons
+      if ($('.gas-station-brand-btn').length > 0) return;
+
+      // Determine country and get only relevant brands
+      let countryBrands = null;
+      if (isNepal) {
+        countryBrands = GAS_STATION_BRANDNAME.Nepal.brandnames;
+      } else if (isPakistan) {
+        countryBrands = GAS_STATION_BRANDNAME.Pakistan.brandnames;
+      }
+      if (!countryBrands) return;
+
+      // Log current brand value for Pakistan gas stations
+      if (isPakistan) {
+        console.log('[Brand Debug] Current venue brand value (Pakistan):', venue.brand);
+      }
+
+      // Build buttons for each brand
+      let buttonsHtml = `<div class='form-group e85 e85-e85-14'><label class='control-label'>Set Station Brand</label>`;
+      countryBrands.forEach((brandObj) => {
+        buttonsHtml += `<button class='waze-btn waze-btn-small waze-btn-white e85 gas-station-brand-btn' style='border:2px solid #0078d7;border-radius:4px;margin:2px;' data-primary='${brandObj.primaryName}' data-brand='${
+          brandObj.brand
+        }' data-website='${brandObj.website || ''}'>${brandObj.primaryName}</button> `;
+      });
+      buttonsHtml += `</div>`;
+      $catControl.after(buttonsHtml);
+
       // Button click handler
-      $('.noc-gas-station-btn').on('click', function () {
+      $('.gas-station-brand-btn').on('click', function () {
+        const primaryName = $(this).attr('data-primary');
+        const brand = $(this).attr('data-brand');
+        const website = $(this).attr('data-website');
+
         // Read lockRank for GAS_STATION from localStorage config
         let lockRank = null;
         let config = {};
@@ -956,69 +1099,60 @@ Added swap names functionality - promotes alias to primary name with arrow-up bu
         for (let i = 1; i <= 10; i++) {
           if (config[i] && config[i].category === gasStationKey) {
             lockRank = parseInt(config[i].lock, 10);
-            console.log(`[NOC Debug] Found gas station shortcut config: slot=${i}, lockRank=${lockRank}`);
             foundConfig = true;
             break;
           }
         }
         if (!foundConfig || isNaN(lockRank)) {
-          console.log(`[NOC Debug] Using fallback lockRank. venue.lockRank=${venue.lockRank}`);
           lockRank = venue.lockRank && !isNaN(venue.lockRank) ? venue.lockRank : 1;
         }
-        console.log(`[NOC Debug] Final lockRank to be used: ${lockRank}`);
-        // Move current name to aliases if not 'NOC'
-        if (venue.name !== 'NOC') {
-          let aliases = Array.isArray(venue.aliases) ? venue.aliases.slice() : [];
-          if (venue.name && !aliases.includes(venue.name)) {
-            aliases.push(venue.name);
+
+        // Move current name to aliases if not the selected primaryName
+        let aliases = Array.isArray(venue.aliases) ? venue.aliases.slice() : [];
+        if (venue.name && venue.name !== primaryName && !aliases.includes(venue.name)) {
+          aliases.push(venue.name);
+        }
+        // Log venue before update
+        const venueBefore = wmeSDK.DataModel.Venues.getById({ venueId });
+        console.log('[Brand Debug] Venue before update:', venueBefore);
+
+        // Try both 'brand' and 'brandName' fields
+        const updateObj = {
+          venueId: venueId,
+          name: primaryName,
+          aliases: aliases,
+          brand: brand,
+          brandName: brand,
+        };
+        if (website) {
+          updateObj.url = website;
+        }
+        console.log('[Brand Debug] Attempting updateVenue (no lockRank) with:', updateObj);
+        try {
+          wmeSDK.DataModel.Venues.updateVenue(updateObj);
+          console.log('[Brand Debug] updateVenue (no lockRank) called successfully.');
+          // Log venue after update
+          setTimeout(() => {
+            const venueAfter = wmeSDK.DataModel.Venues.getById({ venueId });
+            console.log('[Brand Debug] Venue after update:', venueAfter);
+          }, 500);
+          // Now update lockRank in a separate call
+          if (lockRank !== undefined && lockRank !== null) {
+            setTimeout(() => {
+              try {
+                wmeSDK.DataModel.Venues.updateVenue({ venueId: venueId, lockRank: lockRank });
+                console.log('[Brand Debug] lockRank updated successfully:', lockRank);
+              } catch (err2) {
+                console.warn('[Brand Debug] lockRank update failed:', err2);
+              }
+            }, 300);
           }
-          const updateObj = {
-            venueId: venueId,
-            name: 'NOC',
-            aliases: aliases,
-          };
-          if (venue.brand !== 'Nepal Oil Corporation') {
-            updateObj.brand = 'Nepal Oil Corporation';
-            console.log('[NOC Debug] Brand updated to Nepal Oil Corporation');
-          } else {
-            console.log('[NOC Debug] Brand already Nepal Oil Corporation, skipping brand update');
-          }
-          if (venue.lockRank !== lockRank && (!venue.isLocked || venue.isLocked === false)) {
-            updateObj.lockRank = lockRank;
-            console.log(`[NOC Debug] lockRank updated to ${lockRank}`);
-          } else {
-            console.log(`[NOC Debug] lockRank already ${venue.lockRank}, skipping lockRank update`);
-          }
-          try {
-            wmeSDK.DataModel.Venues.updateVenue(updateObj);
-          } catch (err) {
-            console.warn('[NOC Debug] Update failed:', err);
-          }
-        } else {
-          const updateObj = {
-            venueId: venueId,
-          };
-          if (venue.brand !== 'Nepal Oil Corporation') {
-            updateObj.brand = 'Nepal Oil Corporation';
-            console.log('[NOC Debug] Brand updated to Nepal Oil Corporation');
-          } else {
-            console.log('[NOC Debug] Brand already Nepal Oil Corporation, skipping brand update');
-          }
-          if (venue.lockRank !== lockRank && (!venue.isLocked || venue.isLocked === false)) {
-            updateObj.lockRank = lockRank;
-            console.log(`[NOC Debug] lockRank updated to ${lockRank}`);
-          } else {
-            console.log(`[NOC Debug] lockRank already ${venue.lockRank}, skipping lockRank update`);
-          }
-          try {
-            wmeSDK.DataModel.Venues.updateVenue(updateObj);
-          } catch (err) {
-            console.warn('[NOC Debug] Update failed:', err);
-          }
+        } catch (err) {
+          console.warn('[Brand Debug] Update failed:', err);
         }
       });
     }
-    tryInject();
+    tryInjectBrandButtons();
   }
 
   async function registerSidebarScriptTab(wmeSDK) {
@@ -1091,6 +1225,9 @@ Added swap names functionality - promotes alias to primary name with arrow-up bu
   console.log(`${scriptName} initialized.`);
 
   /*Changelogs
+2025.08.11.03
+  - Added support for updating Pakistan Petroleum brands using buttons.
+  - Added button colours
 2025.08.10.15
   - Enhanced swap names functionality with arrow-up buttons for all aliases
   - Improved button visibility with white icons and proper positioning before delete buttons
