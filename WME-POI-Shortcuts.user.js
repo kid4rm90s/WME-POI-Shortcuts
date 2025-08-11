@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.08.11.03
+// @version         2025.08.11.04
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -20,6 +20,13 @@
 
 https: (function () {
   ('use strict');
+
+  const updateMessage = `
+Added support for updating Pakistan Petroleum brands using buttons.\n Minor bug fixes`;
+  const scriptName = GM_info.script.name;
+  const scriptVersion = GM_info.script.version;
+  const downloadUrl = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/code/wme-poi-shortcuts.user.js';
+  const forumURL = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/feedback';
 
   // Gas Station Brand Names for Nepal and Pakistan
   const GAS_STATION_BRANDNAME = {
@@ -135,12 +142,6 @@ https: (function () {
       ],
     },
   };
-  const updateMessage = `
-Added support for updating Pakistan Petroleum brands using buttons.`;
-  const scriptName = GM_info.script.name;
-  const scriptVersion = GM_info.script.version;
-  const downloadUrl = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/code/wme-poi-shortcuts.user.js';
-  const forumURL = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/feedback';
 
   if (typeof unsafeWindow !== 'undefined' && unsafeWindow.SDK_INITIALIZED) {
     unsafeWindow.SDK_INITIALIZED.then(initScript);
@@ -479,7 +480,6 @@ Added support for updating Pakistan Petroleum brands using buttons.`;
         `<div style="display:flex;align-items:center;gap:6px;margin:3px 0 0 0;">
             <label style="font-size:10px;min-width:28px;">Lock</label> ${buildLockLevelDropdown(itemNumber)}
             <label style="font-size:10px;min-width:40px;">Geometry</label> ${buildGeometryTypeDropdown(itemNumber)}
-            />
         </div>`,
       ].join(' ')
     );
@@ -1225,6 +1225,9 @@ Added support for updating Pakistan Petroleum brands using buttons.`;
   console.log(`${scriptName} initialized.`);
 
   /*Changelogs
+2025.08.11.04
+  - Added support for updating Pakistan Petroleum brands using buttons.
+  - Minor bug fixes.
 2025.08.11.03
   - Added support for updating Pakistan Petroleum brands using buttons.
   - Added button colours
