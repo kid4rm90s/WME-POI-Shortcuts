@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.08.11.04
+// @version         2025.08.15.03
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -22,7 +22,7 @@ https: (function () {
   ('use strict');
 
   const updateMessage = `
-Added support for updating Pakistan Petroleum brands using buttons.\n Minor bug fixes`;
+Added automatic hazard layer group and individual layer enabling for hazard shortcuts.\n Added support for Sharp Curves.\n Added support for Complex Junctions. \n Added support for Multiple Lanes Merge.\n Minor bug fixes`;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
   const downloadUrl = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/code/wme-poi-shortcuts.user.js';
@@ -505,43 +505,43 @@ Added support for updating Pakistan Petroleum brands using buttons.\n Minor bug 
           .on('change.wmepoi', function () {
             savePOIShortcutItem(i);
             // Prevent duplicate category selection
-            if (this.id.startsWith('poiItem')) {
-              const selectedCategories = [];
-              for (let j = 1; j <= 10; j++) {
-                const val = $(`#poiItem${j}`).val();
-                if (val) selectedCategories.push(val);
-              }
-              for (let j = 1; j <= 10; j++) {
-                $(`#poiItem${j} option`).prop('disabled', false).removeAttr('title');
-              }
-              for (let j = 1; j <= 10; j++) {
-                const currentVal = $(`#poiItem${j}`).val();
-                for (const cat of selectedCategories) {
-                  if (cat !== currentVal) {
-                    $(`#poiItem${j} option[value='${cat}']`).prop('disabled', true).attr('title', 'this category is already selected.');
-                  }
-                }
-              }
-            }
+            // if (this.id.startsWith('poiItem')) {
+            //   const selectedCategories = [];
+            //   for (let j = 1; j <= 10; j++) {
+            //     const val = $(`#poiItem${j}`).val();
+            //     if (val) selectedCategories.push(val);
+            //   }
+            //   for (let j = 1; j <= 10; j++) {
+            //     $(`#poiItem${j} option`).prop('disabled', false).removeAttr('title');
+            //   }
+            //   for (let j = 1; j <= 10; j++) {
+            //     const currentVal = $(`#poiItem${j}`).val();
+            //     for (const cat of selectedCategories) {
+            //       if (cat !== currentVal) {
+            //         $(`#poiItem${j} option[value='${cat}']`).prop('disabled', true).attr('title', 'this category is already selected.');
+            //       }
+            //     }
+            //   }
+            // }
           });
       }
       // Initial duplicate prevention
-      const selectedCategories = [];
-      for (let j = 1; j <= 10; j++) {
-        const val = $(`#poiItem${j}`).val();
-        if (val) selectedCategories.push(val);
-      }
-      for (let j = 1; j <= 10; j++) {
-        $(`#poiItem${j} option`).prop('disabled', false).removeAttr('title');
-      }
-      for (let j = 1; j <= 10; j++) {
-        const currentVal = $(`#poiItem${j}`).val();
-        for (const cat of selectedCategories) {
-          if (cat !== currentVal) {
-            $(`#poiItem${j} option[value='${cat}']`).prop('disabled', true).attr('title', 'this category is already selected.');
-          }
-        }
-      }
+      // const selectedCategories = [];
+      // for (let j = 1; j <= 10; j++) {
+      //   const val = $(`#poiItem${j}`).val();
+      //   if (val) selectedCategories.push(val);
+      // }
+      // for (let j = 1; j <= 10; j++) {
+      //   $(`#poiItem${j} option`).prop('disabled', false).removeAttr('title');
+      // }
+      // for (let j = 1; j <= 10; j++) {
+      //   const currentVal = $(`#poiItem${j}`).val();
+      //   for (const cat of selectedCategories) {
+      //     if (cat !== currentVal) {
+      //       $(`#poiItem${j} option[value='${cat}']`).prop('disabled', true).attr('title', 'this category is already selected.');
+      //     }
+      //   }
+      // }
     }, 0);
     return html;
   }
@@ -735,7 +735,10 @@ Added support for updating Pakistan Petroleum brands using buttons.\n Minor bug 
         handler: 'WME-POI-Shortcuts_toll-booth',
         title: 'Add Toll Booth',
         func: function (ev) {
-          $("wz-icon[name='toll-booth']").parent().trigger('click');
+          ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_toll_booth', () => {
+            WazeWrap.Alerts.info('POI Shortcut', `POI Type: <b>Toll Booth</b>`, false, false, 2000);
+            $("wz-icon[name='toll-booth']").parent().trigger('click');
+          });
         },
         key: -1, // No default key, user can set custom
         arg: {},
@@ -744,7 +747,10 @@ Added support for updating Pakistan Petroleum brands using buttons.\n Minor bug 
         handler: 'WME-POI-Shortcuts_level-crossing',
         title: 'Add Level Crossing',
         func: function (ev) {
-          $("wz-icon[name='railway-crossing']").parent().trigger('click');
+          ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_railroad_crossing', () => {
+            WazeWrap.Alerts.info('POI Shortcut', `POI Type: <b>Level Crossing</b>`, false, false, 2000);
+            $("wz-icon[name='railway-crossing']").parent().trigger('click');
+          });
         },
         key: -1, // No default key, user can set custom
         arg: {},
@@ -753,7 +759,46 @@ Added support for updating Pakistan Petroleum brands using buttons.\n Minor bug 
         handler: 'WME-POI-Shortcuts_school-zone',
         title: 'Create School Zone',
         func: function (ev) {
-          $("wz-icon[name='school-zone']").parent().trigger('click');
+          ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_school_zone', () => {
+            WazeWrap.Alerts.info('POI Shortcut', `POI Type: <b>School Zone</b>`, false, false, 2000);
+            $("wz-icon[name='school-zone']").parent().trigger('click');
+          });
+        },
+        key: -1, // No default key, user can set custom
+        arg: {},
+      },
+      {
+        handler: 'WME-POI-Shortcuts_sharp-curves',
+        title: 'Create Sharp Curves',
+        func: function (ev) {
+          ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_dangerous_curve', () => {
+            WazeWrap.Alerts.info('POI Shortcut', `POI Type: <b>Sharp Curves</b>`, false, false, 2000);
+            $("wz-icon[name='sharp-curve-ahead']").parent().trigger('click');
+          });
+        },
+        key: -1, // No default key, user can set custom
+        arg: {},
+      },
+      {
+        handler: 'WME-POI-Shortcuts_complex-junctions',
+        title: 'Create Complex Junctions',
+        func: function (ev) {
+          ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_dangerous_intersection', () => {
+            WazeWrap.Alerts.info('POI Shortcut', `POI Type: <b>Complex Junctions</b>`, false, false, 2000);
+            $("wz-icon[name='dangerous-intersection']").parent().trigger('click');
+          });
+        },
+        key: -1, // No default key, user can set custom
+        arg: {},
+      },
+      {
+        handler: 'WME-POI-Shortcuts_multiple-lanes-merging',
+        title: 'Create Multiple Lanes Merging',
+        func: function (ev) {
+          ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_dangerous_merge', () => {
+            WazeWrap.Alerts.info('POI Shortcut', `POI Type: <b>Multiple Lanes Merging</b>`, false, false, 2000);
+            $("wz-icon[name='merge-ahead']").parent().trigger('click');
+          });
         },
         key: -1, // No default key, user can set custom
         arg: {},
@@ -788,39 +833,135 @@ Added support for updating Pakistan Petroleum brands using buttons.\n Minor bug 
         console.warn(`POI Shortcut ${slotNumber}: No category selected`);
         return;
       }
+      // Show WazeWrap alert with POI info before drawing
+      const poiName = $(`#poiItem${slotNumber} option:selected`).text();
+      const lockLevel = !isNaN(lock) ? parseInt(lock, 10) + 1 : 1;
+      const areaType = geomType === 'point' ? 'Point' : 'Area';
+      WazeWrap.Alerts.info('POI Shortcut', `Selected POI Name: <b>${poiName}</b><br>Lock Level: <b>${lockLevel}</b><br>Type: <b>${areaType}</b>`, false, false, 2500);
 
       // Geometry: area = drawPolygon, point = drawPoint
       let drawPromise = geomType === 'point' ? wmeSDK.Map.drawPoint() : wmeSDK.Map.drawPolygon();
-      drawPromise.then((geometry) => {
-        let newVenue = wmeSDK.DataModel.Venues.addVenue({
-          category: cat,
-          geometry: geometry,
-        });
-        wmeSDK.Editing.setSelection({
-          selection: {
-            ids: [newVenue.toString()],
-            objectType: 'venue',
-          },
-        });
-        // Only set lock if lock > 0 (lockRank 1-4)
-        if (!isNaN(lock) && lock > 0) {
-          wmeSDK.DataModel.Venues.updateVenue({
-            venueId: newVenue.toString(),
-            lockRank: lock,
+      drawPromise
+        .then((geometry) => {
+          let newVenue = wmeSDK.DataModel.Venues.addVenue({
+            category: cat,
+            geometry: geometry,
           });
-        }
-        // Nepal-specific logic for Gas Station
-        const topCountry = wmeSDK.DataModel.Countries.getTopCountry();
-        if (topCountry && (topCountry.name === 'Nepal' || topCountry.code === 'NP') && cat === 'GAS_STATION') {
-          wmeSDK.DataModel.Venues.updateVenue({
-            venueId: newVenue.toString(),
-            name: 'NOC',
-            brand: 'Nepal Oil Corporation',
+          wmeSDK.Editing.setSelection({
+            selection: {
+              ids: [newVenue.toString()],
+              objectType: 'venue',
+            },
           });
-        }
-      });
+          // Only set lock if lock > 0 (lockRank 1-4)
+          if (!isNaN(lock) && lock > 0) {
+            wmeSDK.DataModel.Venues.updateVenue({
+              venueId: newVenue.toString(),
+              lockRank: lock,
+            });
+          }
+          // Nepal-specific logic for Gas Station
+          const topCountry = wmeSDK.DataModel.Countries.getTopCountry();
+          if (topCountry && (topCountry.name === 'Nepal' || topCountry.code === 'NP') && cat === 'GAS_STATION') {
+            wmeSDK.DataModel.Venues.updateVenue({
+              venueId: newVenue.toString(),
+              name: 'NOC',
+              brand: 'Nepal Oil Corporation',
+            });
+          }
+        })
+        .catch((err) => {
+          if (err && err.name === 'InvalidStateError') {
+            console.log('POI drawing was cancelled by the user.');
+          } else {
+            console.error('Error during POI drawing:', err);
+          }
+        });
     } catch (error) {
       console.error(`Error creating POI from shortcut ${slotNumber}:`, error);
+    }
+  }
+
+  // Helper function to ensure hazard layer group and specific hazard layer are enabled
+  function ensureHazardLayersEnabled(hazardLayerId, callback) {
+    try {
+      // Wait a bit to ensure the layer UI is ready
+      setTimeout(() => {
+        // First, ensure the permanent hazards group is enabled
+        const hazardGroupToggle = document.getElementById('layer-switcher-group_permanent_hazards');
+        if (hazardGroupToggle) {
+          // For wz-toggle-switch: checked="" means enabled, checked="false" means disabled
+          const checkedAttr = hazardGroupToggle.getAttribute('checked');
+          const isGroupEnabled = checkedAttr === '' || checkedAttr === 'true';
+
+          if (!isGroupEnabled) {
+            hazardGroupToggle.click();
+            // Wait for the group to be enabled before enabling individual layers
+            setTimeout(() => {
+              enableSpecificHazardLayer(hazardLayerId, callback);
+            }, 400);
+            return;
+          }
+        } else {
+          console.warn('Hazard group toggle not found');
+        }
+
+        // If group is already enabled, directly enable the specific layer
+        enableSpecificHazardLayer(hazardLayerId, callback);
+      }, 50);
+    } catch (error) {
+      console.error('Error enabling hazard layers:', error);
+      // Execute callback even if there's an error to prevent hanging
+      if (callback && typeof callback === 'function') {
+        setTimeout(callback, 100);
+      }
+    }
+  }
+
+  // Helper function to enable a specific hazard layer
+  function enableSpecificHazardLayer(hazardLayerId, callback) {
+    try {
+      if (hazardLayerId) {
+        const hazardLayerCheckbox = document.getElementById(hazardLayerId);
+        if (hazardLayerCheckbox) {
+          // For wz-checkbox: checked="" means enabled, checked="false" means disabled
+          const checkedAttr = hazardLayerCheckbox.getAttribute('checked');
+          const isLayerEnabled = checkedAttr === '' || checkedAttr === 'true';
+
+
+          if (!isLayerEnabled) {
+            hazardLayerCheckbox.click();
+            // Wait for layer to be enabled before executing callback
+            setTimeout(() => {
+              if (callback && typeof callback === 'function') {
+                callback();
+              }
+            }, 300);
+          } else {
+            // Layer is already enabled, execute callback immediately
+            if (callback && typeof callback === 'function') {
+              callback();
+            }
+          }
+        } else {
+          console.warn(`Hazard layer element not found: ${hazardLayerId}`);
+          // Execute callback even if element not found to prevent hanging
+          if (callback && typeof callback === 'function') {
+            setTimeout(callback, 100);
+          }
+        }
+      } else {
+        // No specific layer ID provided, execute callback
+        if (callback && typeof callback === 'function') {
+          callback();
+        }
+      }
+    } catch (error) {
+      console.error('Error enabling specific hazard layer:', error);
+      // Execute callback even if there's an error to prevent hanging
+      if (callback && typeof callback === 'function') {
+        setTimeout(callback, 100);
+      }
     }
   }
 
@@ -1225,6 +1366,11 @@ Added support for updating Pakistan Petroleum brands using buttons.\n Minor bug 
   console.log(`${scriptName} initialized.`);
 
   /*Changelogs
+2025.08.15.03
+  - Added automatic hazard layer group and individual layer enabling for hazard shortcuts.
+  - Added support for Sharp Curves.
+  - Added support for Complex Junctions.
+  - Added support for Multiple Lanes Merge.
 2025.08.11.04
   - Added support for updating Pakistan Petroleum brands using buttons.
   - Minor bug fixes.
