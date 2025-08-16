@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.08.16.02
+// @version         2025.08.16.03
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -22,7 +22,7 @@ https: (function () {
   ('use strict');
 
   const updateMessage = `
-Fix for bug where alt names were not adding correctly for gas stations and charging stations button clicked.\n Charging stations button for Nepal has been added.`;
+Fix for bug where POI points were not being selected correctly after creation.`;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
   const downloadUrl = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/code/wme-poi-shortcuts.user.js';
@@ -926,18 +926,25 @@ Fix for bug where alt names were not adding correctly for gas stations and charg
             category: cat,
             geometry: geometry,
           });
-          wmeSDK.Editing.setSelection({
-            selection: {
-              ids: [newVenue.toString()],
-              objectType: 'venue',
-            },
-          });
+          
+          // Add a small delay to ensure the venue is fully created before selecting it
+          setTimeout(() => {
+            wmeSDK.Editing.setSelection({
+              selection: {
+                ids: [newVenue.toString()],
+                objectType: 'venue',
+              },
+            });
+          }, 100);
+          
           // Only set lock if lock > 0 (lockRank 1-4)
           if (!isNaN(lock) && lock > 0) {
-            wmeSDK.DataModel.Venues.updateVenue({
-              venueId: newVenue.toString(),
-              lockRank: lock,
-            });
+            setTimeout(() => {
+              wmeSDK.DataModel.Venues.updateVenue({
+                venueId: newVenue.toString(),
+                lockRank: lock,
+              });
+            }, 200);
           }
           // Nepal-specific logic for Gas Station
           const topCountry = wmeSDK.DataModel.Countries.getTopCountry();
@@ -1490,7 +1497,9 @@ Fix for bug where alt names were not adding correctly for gas stations and charg
   console.log(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
-2025.08.16.02
+2025.08.16.03
+  - Fix for bug where POI points were not being selected correctly after creation.
+  2025.08.16.02
   - Fix for bug where alt names were not adding correctly for gas stations and charging stations button clicked.
   - Charging stations button for Nepal has been added.
   2025.08.16.01
