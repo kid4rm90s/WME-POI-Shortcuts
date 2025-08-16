@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.08.16.01
+// @version         2025.08.16.02
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -22,7 +22,7 @@ https: (function () {
   ('use strict');
 
   const updateMessage = `
-Fix for bug where gas station failed to save when gas station button pressed`;
+Fix for bug where alt names were not adding correctly for gas stations and charging stations button clicked.\n Charging stations button for Nepal has been added.`;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
   const downloadUrl = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/code/wme-poi-shortcuts.user.js';
@@ -37,6 +37,7 @@ Fix for bug where gas station failed to save when gas station button pressed`;
           primaryName: 'NOC',
           brand: 'Nepal Oil Corporation',
           website: 'noc.org.np',
+        
         },
       ],
     },
@@ -142,7 +143,85 @@ Fix for bug where gas station failed to save when gas station button pressed`;
       ],
     },
   };
-
+  const CHARGING_STATION_BRANDNAME = {
+    Nepal: {
+      countryCode: 'NP',
+      brandnames: [
+        {
+          primaryName: 'BYD',
+          brand: 'BYD',
+          aliases: ['EV Charging Station'],
+          website: 'cimex.com.np/charging-stations',
+        },
+        {
+          primaryName: 'CG Motors',
+          brand: 'CG Motors',
+          aliases: ['EV Charging Station'],
+          website: 'cg-ev.com/charger-station',
+        },
+        {
+          primaryName: 'MG Motors',
+          brand: 'MG Motors',
+          aliases: ['EV Charging Station'],
+          website: 'mgmotors.com.np/locate-ev-charger',
+        },
+        {
+          primaryName: 'Tata Motors',
+          brand: 'Tata Motors',
+          aliases: ['EV Charging Station'],
+          website: 'tatacars.sipradi.com.np/vehicle/charginglocation',
+        },
+        {
+          primaryName: 'Hyundai Motors',
+          brand: 'Hyundai Motors',
+          aliases: ['EV Charging Station'],
+          website: 'laxmihyundai.com/charge-points',
+        },
+        {
+          primaryName: 'NEA',
+          brand: 'Nepal Electricity Authority',
+          aliases: ['EV Charging Station'],
+          website: 'nea.org.np',
+        },
+        {
+          primaryName: 'ElectriVa',
+          brand: 'ElectriVa Nepal',
+          aliases: ['EV Charging Station'],
+          website: 'electrivanepal.com/locations',
+        },
+        {
+          primaryName: 'Yatri',
+          brand: 'Yatri',
+          aliases: ['EV Charging Station'],
+          website: 'yatrienergy.com/',
+        },
+        {
+          primaryName: 'three Go',
+          brand: 'three Go',
+          aliases: ['EV Charging Station'],
+          website: 'www.theego.com.np/thee-go-chargepoint/',
+        },
+        {
+          primaryName: 'MAW Vriddhi',
+          brand: 'MAW Vriddhi',
+          aliases: ['EV Charging Station'],
+          website: 'mawevcharging.com/',
+        },
+        {
+          primaryName: 'OmodaJaencoo',
+          brand: 'OmodaJaencoo',
+          aliases: ['EV Charging Station'],
+          website: 'omodajaecoonepal.com/charging-stations-in-nepal',
+        },
+        {
+          primaryName: 'Charging Station',
+          brand: '',
+          aliases: ['EV Charging Station'],
+          website: '',
+        },
+      ],
+    },
+  };
   if (typeof unsafeWindow !== 'undefined' && unsafeWindow.SDK_INITIALIZED) {
     unsafeWindow.SDK_INITIALIZED.then(initScript);
   } else if (typeof window.SDK_INITIALIZED !== 'undefined') {
@@ -310,7 +389,7 @@ Fix for bug where gas station failed to save when gas station button pressed`;
     wmeSDK.Events.on({
       eventName: 'wme-selection-changed',
       eventHandler: () => {
-        injectNOCButtonIfNepalGasStation(wmeSDK);
+        injectButtonStation(wmeSDK);
         injectSwapNamesButton(wmeSDK);
       },
     });
@@ -928,7 +1007,6 @@ Fix for bug where gas station failed to save when gas station button pressed`;
           const checkedAttr = hazardLayerCheckbox.getAttribute('checked');
           const isLayerEnabled = checkedAttr === '' || checkedAttr === 'true';
 
-
           if (!isLayerEnabled) {
             hazardLayerCheckbox.click();
             // Wait for layer to be enabled before executing callback
@@ -1037,6 +1115,11 @@ Fix for bug where gas station failed to save when gas station button pressed`;
     }
     // Fallback to 'GAS_STATION'
     return 'GAS_STATION';
+  }
+
+  function getChargingStationCategoryKey() {
+    // Charging station category key is consistent across all locales
+    return 'CHARGING_STATION';
   }
 
   function swapPrimaryAndAliasNames(wmeSDK, aliasIndex = 0) {
@@ -1172,7 +1255,7 @@ Fix for bug where gas station failed to save when gas station button pressed`;
     tryInjectSwapButton();
   }
 
-  function injectNOCButtonIfNepalGasStation(wmeSDK) {
+  function injectButtonStation(wmeSDK) {
     // Only run if a venue is selected
     const selection = wmeSDK.Editing.getSelection();
     if (!selection || selection.objectType !== 'venue' || !selection.ids || selection.ids.length !== 1) return;
@@ -1181,14 +1264,18 @@ Fix for bug where gas station failed to save when gas station button pressed`;
     const venue = wmeSDK.DataModel.Venues.getById({ venueId });
     const topCountry = wmeSDK.DataModel.Countries.getTopCountry();
     const gasStationKey = getGasStationCategoryKey();
+    const chargingStationKey = getChargingStationCategoryKey();
 
-    // Check if venue.categories (array) contains the gas station key and country is Nepal or Pakistan
+    // Check if venue.categories (array) contains the gas station or charging station key and country is Nepal or Pakistan
     const isNepal = !!topCountry && (topCountry.name === 'Nepal' || topCountry.code === 'NP');
     const isPakistan = !!topCountry && (topCountry.name === 'Pakistan' || topCountry.code === 'PK');
     const isGasStation = !!venue && Array.isArray(venue.categories) && venue.categories.includes(gasStationKey);
-    if (!(isGasStation && (isNepal || isPakistan))) return;
+    const isChargingStation = !!venue && Array.isArray(venue.categories) && venue.categories.includes(chargingStationKey);
+    
+    // Only show buttons for Nepal gas/charging stations or Pakistan gas stations
+    if (!((isGasStation || isChargingStation) && isNepal) && !(isGasStation && isPakistan)) return;
 
-    // Show brand buttons for Nepal and Pakistan gas stations
+    // Show brand buttons for Nepal and Pakistan gas stations, and Nepal charging stations
     function tryInjectBrandButtons() {
       const $catControl = $('.categories-control');
       if ($catControl.length === 0) {
@@ -1196,39 +1283,63 @@ Fix for bug where gas station failed to save when gas station button pressed`;
         return;
       }
       // Prevent duplicate buttons
-      if ($('.gas-station-brand-btn').length > 0) return;
+      if ($('.gas-station-brand-btn, .charging-station-brand-btn').length > 0) return;
 
-      // Determine country and get only relevant brands
+      // Determine which type of station and get relevant brands
       let countryBrands = null;
-      if (isNepal) {
-        countryBrands = GAS_STATION_BRANDNAME.Nepal.brandnames;
-      } else if (isPakistan) {
-        countryBrands = GAS_STATION_BRANDNAME.Pakistan.brandnames;
+      let stationTypeName = '';
+      let buttonClass = '';
+      let categoryKey = '';
+
+      if (isGasStation) {
+        stationTypeName = 'Gas Station';
+        buttonClass = 'gas-station-brand-btn';
+        categoryKey = gasStationKey;
+        if (isNepal) {
+          countryBrands = GAS_STATION_BRANDNAME.Nepal.brandnames;
+        } else if (isPakistan) {
+          countryBrands = GAS_STATION_BRANDNAME.Pakistan.brandnames;
+        }
+      } else if (isChargingStation && isNepal) {
+        stationTypeName = 'Charging Station';
+        buttonClass = 'charging-station-brand-btn';
+        categoryKey = chargingStationKey;
+        countryBrands = CHARGING_STATION_BRANDNAME.Nepal.brandnames;
       }
+
       if (!countryBrands) return;
 
-      // Log current brand value for Pakistan gas stations
-      if (isPakistan) {
-        console.log('[Brand Debug] Current venue brand value (Pakistan):', venue.brand);
+      // Log current brand value for debugging
+      if (isPakistan && isGasStation) {
+        console.log('[Brand Debug] Current venue brand value (Pakistan Gas Station):', venue.brand);
+      } else if (isNepal && isChargingStation) {
+        console.log('[Brand Debug] Current venue brand value (Nepal Charging Station):', venue.brand);
       }
 
       // Build buttons for each brand
-      let buttonsHtml = `<div class='form-group e85 e85-e85-14'><label class='control-label'>Set Station Brand</label>`;
+      let buttonsHtml = `<div class='form-group e85 e85-e85-14'><label class='control-label'>Set ${stationTypeName} Brand</label>`;
       countryBrands.forEach((brandObj) => {
-        buttonsHtml += `<button class='waze-btn waze-btn-small waze-btn-white e85 gas-station-brand-btn' style='border:2px solid #0078d7;border-radius:4px;margin:2px;' data-primary='${brandObj.primaryName}' data-brand='${
+        buttonsHtml += `<button class='waze-btn waze-btn-small waze-btn-white e85 ${buttonClass}' style='border:2px solid #0078d7;border-radius:4px;margin:2px;' data-primary='${brandObj.primaryName}' data-brand='${
           brandObj.brand
-        }' data-website='${brandObj.website || ''}'>${brandObj.primaryName}</button> `;
+        }' data-website='${brandObj.website || ''}' data-category='${categoryKey}'>${brandObj.primaryName}</button> `;
       });
       buttonsHtml += `</div>`;
       $catControl.after(buttonsHtml);
 
-      // Button click handler
-      $('.gas-station-brand-btn').on('click', function () {
+      // Button click handler for both gas station and charging station brands
+      $('.gas-station-brand-btn, .charging-station-brand-btn').on('click', function () {
         const primaryName = $(this).attr('data-primary');
         const brand = $(this).attr('data-brand');
         const website = $(this).attr('data-website');
+        const categoryKey = $(this).attr('data-category');
 
-        // Read lockRank for GAS_STATION from localStorage config
+        // Find the selected brand object to get its predefined aliases
+        let selectedBrandObj = null;
+        if (countryBrands) {
+          selectedBrandObj = countryBrands.find(brandObj => brandObj.primaryName === primaryName);
+        }
+
+        // Read lockRank for the station category from localStorage config
         let lockRank = null;
         let config = {};
         try {
@@ -1238,7 +1349,7 @@ Fix for bug where gas station failed to save when gas station button pressed`;
         }
         let foundConfig = false;
         for (let i = 1; i <= 10; i++) {
-          if (config[i] && config[i].category === gasStationKey) {
+          if (config[i] && config[i].category === categoryKey) {
             lockRank = parseInt(config[i].lock, 10);
             foundConfig = true;
             break;
@@ -1248,14 +1359,29 @@ Fix for bug where gas station failed to save when gas station button pressed`;
           lockRank = venue.lockRank && !isNaN(venue.lockRank) ? venue.lockRank : 1;
         }
 
-        // Move current name to aliases if not the selected primaryName
+        // Build aliases array: start with existing venue aliases, add current name if different, then add brand aliases
         let aliases = Array.isArray(venue.aliases) ? venue.aliases.slice() : [];
+        
+        // Add current venue name to aliases if it's different from the selected primaryName
         if (venue.name && venue.name !== primaryName && !aliases.includes(venue.name)) {
           aliases.push(venue.name);
         }
+        
+        // Add predefined aliases from the brand data
+        if (selectedBrandObj && Array.isArray(selectedBrandObj.aliases)) {
+          selectedBrandObj.aliases.forEach(alias => {
+            // Only add if it's not empty and not already in the aliases array
+            if (alias && alias.trim() !== '' && !aliases.includes(alias)) {
+              aliases.push(alias);
+            }
+          });
+        }
+
         // Log venue before update
         const venueBefore = wmeSDK.DataModel.Venues.getById({ venueId });
         console.log('[Brand Debug] Venue before update:', venueBefore);
+        console.log('[Brand Debug] Selected brand object:', selectedBrandObj);
+        console.log('[Brand Debug] Final aliases array:', aliases);
 
         const updateObj = {
           venueId: venueId,
@@ -1364,7 +1490,10 @@ Fix for bug where gas station failed to save when gas station button pressed`;
   console.log(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
-2025.08.16.01
+2025.08.16.02
+  - Fix for bug where alt names were not adding correctly for gas stations and charging stations button clicked.
+  - Charging stations button for Nepal has been added.
+  2025.08.16.01
   - Fix for bug where gas station failed to save when gas station button pressed.
 2025.08.15.03
   - Added automatic hazard layer group and individual layer enabling for hazard shortcuts.
