@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.08.15.03
+// @version         2025.08.16.01
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -22,7 +22,7 @@ https: (function () {
   ('use strict');
 
   const updateMessage = `
-Added automatic hazard layer group and individual layer enabling for hazard shortcuts.\n Added support for Sharp Curves.\n Added support for Complex Junctions. \n Added support for Multiple Lanes Merge.\n Minor bug fixes`;
+Fix for bug where gas station failed to save when gas station button pressed`;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
   const downloadUrl = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/code/wme-poi-shortcuts.user.js';
@@ -1257,13 +1257,11 @@ Added automatic hazard layer group and individual layer enabling for hazard shor
         const venueBefore = wmeSDK.DataModel.Venues.getById({ venueId });
         console.log('[Brand Debug] Venue before update:', venueBefore);
 
-        // Try both 'brand' and 'brandName' fields
         const updateObj = {
           venueId: venueId,
           name: primaryName,
           aliases: aliases,
           brand: brand,
-          brandName: brand,
         };
         if (website) {
           updateObj.url = website;
@@ -1365,7 +1363,9 @@ Added automatic hazard layer group and individual layer enabling for hazard shor
   scriptupdatemonitor();
   console.log(`${scriptName} initialized.`);
 
-  /*Changelogs
+  /******************************************Changelogs***********************************************************
+2025.08.16.01
+  - Fix for bug where gas station failed to save when gas station button pressed.
 2025.08.15.03
   - Added automatic hazard layer group and individual layer enabling for hazard shortcuts.
   - Added support for Sharp Curves.
@@ -1385,5 +1385,5 @@ Added automatic hazard layer group and individual layer enabling for hazard shor
   - Added swap names functionality between primary and alias names using WME SDK
 2025.08.10.011
   - Legacy shortcuts key support
-  */
+  ******************************************************************************************************************/
 })();
