@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.08.17.01
+// @version         2025.08.17.03
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -22,7 +22,7 @@ https: (function () {
   ('use strict');
 
   const updateMessage = `
-Fix for bug where the swap icon does not appear immidiately.`;
+Fix for swap button not appearing on first venue selection after page refresh.\n Fix for venue name and alias swapping not working correctly.`;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
   const downloadUrl = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/code/wme-poi-shortcuts.user.js';
@@ -373,6 +373,11 @@ Fix for bug where the swap icon does not appear immidiately.`;
       setupShortcuts(wmeSDK);
       // Register script sidebar tab for venue dropdown
       registerSidebarScriptTab(wmeSDK);
+      // Check for initial venue selection and inject swap button if needed
+      setTimeout(() => {
+        injectButtonStation(wmeSDK);
+        injectSwapNamesButton(wmeSDK);
+      }, 500); // Small delay to ensure UI is fully loaded
     });
     wmeSDK.Events.on({
       eventName: 'wme-map-move',
@@ -1230,26 +1235,26 @@ Fix for bug where the swap icon does not appear immidiately.`;
       }
 
       // Fallback method if no aliases found
-      if (!foundAliases) {
-        const $nameField = $('input[placeholder*="name" i], input[name*="name" i], .venue-name input, .place-name input');
-        if ($nameField.length > 0) {
-          const $targetContainer = $nameField.closest('.form-group, .field-group, .control-group').first();
-          if ($targetContainer.length > 0 && $('.swap-names-btn').length === 0) {
-            const hasSwappableNames = venue.name && venue.aliases && venue.aliases.length > 0;
-            if (hasSwappableNames) {
-              const buttonHtml = `
-                <div class='form-group swap-names-container' style='margin: 5px 0; display: inline-block;'>
-                  <wz-button color="blue" size="sm" class="swap-names-btn" title="Swap primary name with first alias" data-alias-index="0">
-                    <i class="w-icon w-icon-arrow-up"></i> Swap Names
-                  </wz-button>
-                </div>
-              `;
-              $targetContainer.after(buttonHtml);
-              foundAliases = true;
-            }
-          }
-        }
-      }
+      // if (!foundAliases) {
+      //   const $nameField = $('input[placeholder*="name" i], input[name*="name" i], .venue-name input, .place-name input');
+      //   if ($nameField.length > 0) {
+      //     const $targetContainer = $nameField.closest('.form-group, .field-group, .control-group').first();
+      //     if ($targetContainer.length > 0 && $('.swap-names-btn').length === 0) {
+      //       const hasSwappableNames = venue.name && venue.aliases && venue.aliases.length > 0;
+      //       if (hasSwappableNames) {
+      //         const buttonHtml = `
+      //           <div class='form-group swap-names-container' style='margin: 5px 0; display: inline-block;'>
+      //             <wz-button color="blue" size="sm" class="swap-names-btn" title="Swap primary name with first alias" data-alias-index="0">
+      //               <i class="w-icon w-icon-arrow-up"></i> Swap Names
+      //             </wz-button>
+      //           </div>
+      //         `;
+      //         $targetContainer.after(buttonHtml);
+      //         foundAliases = true;
+      //       }
+      //     }
+      //   }
+      // }
 
       if (!foundAliases) {
         setTimeout(tryInjectSwapButton, 100);
@@ -1503,6 +1508,9 @@ Fix for bug where the swap icon does not appear immidiately.`;
   console.log(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
+2025.08.17.02
+  - Fix for swap button not appearing on first venue selection after page refresh.
+  - Added initial venue selection check after WME ready event.
 2025.08.17.01
   - Re-inject swap buttons so icon appears immediately.
   2025.08.16.03
