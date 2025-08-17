@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.08.17.02
+// @version         2025.08.17.03
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -22,7 +22,7 @@ https: (function () {
   ('use strict');
 
   const updateMessage = `
-Fix for swap button not appearing on first venue selection after page refresh.`;
+Fix for swap button not appearing on first venue selection after page refresh.\n Fix for venue name and alias swapping not working correctly.`;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
   const downloadUrl = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/code/wme-poi-shortcuts.user.js';
@@ -1235,26 +1235,26 @@ Fix for swap button not appearing on first venue selection after page refresh.`;
       }
 
       // Fallback method if no aliases found
-      if (!foundAliases) {
-        const $nameField = $('input[placeholder*="name" i], input[name*="name" i], .venue-name input, .place-name input');
-        if ($nameField.length > 0) {
-          const $targetContainer = $nameField.closest('.form-group, .field-group, .control-group').first();
-          if ($targetContainer.length > 0 && $('.swap-names-btn').length === 0) {
-            const hasSwappableNames = venue.name && venue.aliases && venue.aliases.length > 0;
-            if (hasSwappableNames) {
-              const buttonHtml = `
-                <div class='form-group swap-names-container' style='margin: 5px 0; display: inline-block;'>
-                  <wz-button color="blue" size="sm" class="swap-names-btn" title="Swap primary name with first alias" data-alias-index="0">
-                    <i class="w-icon w-icon-arrow-up"></i> Swap Names
-                  </wz-button>
-                </div>
-              `;
-              $targetContainer.after(buttonHtml);
-              foundAliases = true;
-            }
-          }
-        }
-      }
+      // if (!foundAliases) {
+      //   const $nameField = $('input[placeholder*="name" i], input[name*="name" i], .venue-name input, .place-name input');
+      //   if ($nameField.length > 0) {
+      //     const $targetContainer = $nameField.closest('.form-group, .field-group, .control-group').first();
+      //     if ($targetContainer.length > 0 && $('.swap-names-btn').length === 0) {
+      //       const hasSwappableNames = venue.name && venue.aliases && venue.aliases.length > 0;
+      //       if (hasSwappableNames) {
+      //         const buttonHtml = `
+      //           <div class='form-group swap-names-container' style='margin: 5px 0; display: inline-block;'>
+      //             <wz-button color="blue" size="sm" class="swap-names-btn" title="Swap primary name with first alias" data-alias-index="0">
+      //               <i class="w-icon w-icon-arrow-up"></i> Swap Names
+      //             </wz-button>
+      //           </div>
+      //         `;
+      //         $targetContainer.after(buttonHtml);
+      //         foundAliases = true;
+      //       }
+      //     }
+      //   }
+      // }
 
       if (!foundAliases) {
         setTimeout(tryInjectSwapButton, 100);
