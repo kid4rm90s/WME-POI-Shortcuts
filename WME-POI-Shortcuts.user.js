@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.08.16.03
+// @version         2025.08.17.01
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -22,7 +22,7 @@ https: (function () {
   ('use strict');
 
   const updateMessage = `
-Fix for bug where POI points were not being selected correctly after creation.`;
+Fix for bug where the swap icon does not appear immidiately.`;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
   const downloadUrl = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/code/wme-poi-shortcuts.user.js';
@@ -1174,6 +1174,12 @@ Fix for bug where POI points were not being selected correctly after creation.`;
       });
 
       console.log(`Swapped names: "${currentPrimaryName}" ↔ "${targetAlias}" (alias index: ${aliasIndex})`);
+
+      // Re-inject swap buttons so icon appears immidiately
+      setTimeout(function() {
+        injectSwapNamesButton(wmeSDK);
+      }, 150);
+
     } catch (error) {
       console.error('Error swapping venue names:', error);
     }
@@ -1497,7 +1503,9 @@ Fix for bug where POI points were not being selected correctly after creation.`;
   console.log(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
-2025.08.16.03
+2025.08.17.01
+  - Re-inject swap buttons so icon appears immediately.
+  2025.08.16.03
   - Fix for bug where POI points were not being selected correctly after creation.
   2025.08.16.02
   - Fix for bug where alt names were not adding correctly for gas stations and charging stations button clicked.
