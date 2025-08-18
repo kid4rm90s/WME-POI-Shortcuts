@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.08.17.03
+// @version         2025.08.18.01
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -22,7 +22,7 @@ https: (function () {
   ('use strict');
 
   const updateMessage = `
-Fix for swap button not appearing on first venue selection after page refresh.\n Fix for venue name and alias swapping not working correctly.`;
+Fix for multiple name swapping buttons displayed when used with WME PIE.`;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
   const downloadUrl = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/code/wme-poi-shortcuts.user.js';
@@ -1212,7 +1212,11 @@ Fix for swap button not appearing on first venue selection after page refresh.\n
           const $aliasItem = $(this);
           const $actionsContainer = $aliasItem.find('div[slot="actions"].alias-item-actions');
 
-          if ($actionsContainer.length > 0) {
+            if ($actionsContainer.length > 0) {
+              // Remove unwanted "To Name" button from other scripts
+              $actionsContainer.find('div.makePrimary.alias-item-action').filter(function() {
+                return $(this).text().trim() === 'To Name';
+              }).remove();
             // Check if swap button already exists in this specific alias item
             if ($actionsContainer.find('.swap-names-btn').length === 0) {
               foundAliases = true;
@@ -1508,7 +1512,9 @@ Fix for swap button not appearing on first venue selection after page refresh.\n
   console.log(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
-2025.08.17.02
+2025.08.18.01
+  - Fix for multiple name swapping buttons displayed when used with WME PIE.
+  2025.08.17.02
   - Fix for swap button not appearing on first venue selection after page refresh.
   - Added initial venue selection check after WME ready event.
 2025.08.17.01
