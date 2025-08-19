@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.08.18.01
+// @version         2025.08.19.03
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -21,8 +21,8 @@
 https: (function () {
   ('use strict');
 
-  const updateMessage = `
-Fix for multiple name swapping buttons displayed when used with WME PIE.`;
+  const updateMessage = 
+    '<br>Enhanced "Convert OTHER to Residential" functionality using shortcut key.</br><br>The shortcut now automatically copies venue names to house numbers and converts to residential places. </br><br>Compatibility with the New WME v2.309 with the types of House Numbers you can now map in WME Production for both Residential Point Places (RPP) and venues.</br>'
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
   const downloadUrl = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/code/wme-poi-shortcuts.user.js';
@@ -222,12 +222,43 @@ Fix for multiple name swapping buttons displayed when used with WME PIE.`;
       ],
     },
   };
+
+  // Global variable to track the MutationObserver for aliases list
+  let aliasListObserver = null;
+  
+  // Constants for timeouts and delays
+  const ALIAS_INJECTION_DELAY = 50;
+  const RETRY_INJECTION_DELAY = 100;
+  const BRAND_BUTTON_RETRY_DELAY = 150;
+  const SCRIPT_UPDATE_MONITOR_DELAY = 250;
+  const UI_ELEMENT_WAIT_DELAY = 50;
+
+  // Logging utility with consistent prefixes
+  const Logger = {
+    info: (message, ...args) => console.log(`[WME POI Shortcuts] ${message}`, ...args),
+    warn: (message, ...args) => console.warn(`[WME POI Shortcuts] ${message}`, ...args),
+    error: (message, ...args) => console.error(`[WME POI Shortcuts] ${message}`, ...args)
+  };
+
+  // Helper function to safely disconnect observer
+  function disconnectAliasObserver() {
+    if (aliasListObserver) {
+      try {
+        aliasListObserver.disconnect();
+        aliasListObserver = null;
+      } catch (error) {
+        Logger.warn('Error disconnecting alias observer:', error);
+        aliasListObserver = null;
+      }
+    }
+  }
+
   if (typeof unsafeWindow !== 'undefined' && unsafeWindow.SDK_INITIALIZED) {
     unsafeWindow.SDK_INITIALIZED.then(initScript);
   } else if (typeof window.SDK_INITIALIZED !== 'undefined') {
     window.SDK_INITIALIZED.then(initScript);
   } else {
-    console.error('WME SDK is not available. Script will not run.');
+    Logger.error('WME SDK is not available. Script will not run.');
   }
 
   // Inject custom CSS for grayed out disabled options
@@ -645,7 +676,7 @@ Fix for multiple name swapping buttons displayed when used with WME PIE.`;
       }
       // Check if shortcut keys are in use
       if (wmeSDK.Shortcuts.areShortcutKeysInUse({ shortcutKeys: shortcutKey })) {
-        console.warn(`Shortcut keys ${shortcutKey} already in use, skipping registration for POI Shortcut #${i}`);
+        Logger.warn(`Shortcut keys ${shortcutKey} already in use, skipping registration for POI Shortcut #${i}`);
         continue;
       }
       wmeSDK.Shortcuts.createShortcut({
@@ -887,6 +918,15 @@ Fix for multiple name swapping buttons displayed when used with WME PIE.`;
         key: -1, // No default key, user can set custom
         arg: {},
       },
+      {
+        handler: 'WME-POI-Shortcuts_convert-other-to-residential',
+        title: 'Convert OTHER to Residential (Copy Name to House Number)',
+        func: function (ev) {
+          convertOtherToResidential(wmeSDK);
+        },
+        key: -1, // No default key, user can set custom shortcut in WME settings
+        arg: {},
+      },
     ];
 
     // Register legacy shortcuts
@@ -905,7 +945,198 @@ Fix for multiple name swapping buttons displayed when used with WME PIE.`;
     );
   }
 
-  // Function to create POI from shortcut slot
+  /**
+   * Converts OTHER type venues to residential places by copying the primary name 
+   * to the venue address house number and triggering the conversion button.
+   * 
+   * @param {Object} wmeSDK - The WME SDK instance
+   */
+  function convertOtherToResidential(wmeSDK) {
+    try {
+      const venue = getSelectedVenue(wmeSDK);
+      if (!venue) return;
+
+      if (!isValidOtherVenue(venue)) return;
+
+      if (!hasValidPrimaryName(venue)) return;
+
+      checkAndUpdateVenueAddress(wmeSDK, venue);
+
+    } catch (error) {
+      Logger.error('Error in convertOtherToResidential:', error);
+      WazeWrap.Alerts.error('POI Shortcut', 'An unexpected error occurred during conversion.', false, false, 3000);
+    }
+  }
+
+  /**
+   * Gets the currently selected venue from WME
+   * 
+   * @param {Object} wmeSDK - The WME SDK instance
+   * @returns {Object|null} - The selected venue or null if invalid selection
+   */
+  function getSelectedVenue(wmeSDK) {
+    const selection = wmeSDK.Editing.getSelection();
+    
+    if (!selection || selection.objectType !== 'venue' || !selection.ids || selection.ids.length !== 1) {
+      WazeWrap.Alerts.warning('POI Shortcut', 'Please select a venue first.', false, false, 3000);
+      return null;
+    }
+
+    const venueId = selection.ids[0];
+    const venue = wmeSDK.DataModel.Venues.getById({ venueId });
+
+    if (!venue) {
+      WazeWrap.Alerts.error('POI Shortcut', 'Venue not found.', false, false, 3000);
+      return null;
+    }
+
+    return venue;
+  }
+
+  /**
+   * Validates if the venue is of type OTHER
+   * 
+   * @param {Object} venue - The venue object
+   * @returns {boolean} - True if venue is valid OTHER type
+   */
+  function isValidOtherVenue(venue) {
+    const otherCategories = ['OTHER', 'other'];
+    const venueCategories = venue.categories || [];
+    const isOther = venueCategories.some(cat => otherCategories.includes(cat));
+    
+    console.log('Venue categories:', venueCategories);
+    
+    if (!isOther) {
+      WazeWrap.Alerts.warning('POI Shortcut', `This function only works with venues of type OTHER. Actual: ${venueCategories.join(', ')}`, false, false, 3000);
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Validates if the venue has a valid primary name
+   * 
+   * @param {Object} venue - The venue object
+   * @returns {boolean} - True if venue has valid primary name
+   */
+  function hasValidPrimaryName(venue) {
+    if (!venue.name || !venue.name.trim()) {
+      WazeWrap.Alerts.warning('POI Shortcut', 'Primary name is empty and cannot be used as house number.', false, false, 3000);
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Checks venue address and updates it if needed
+   * 
+   * @param {Object} wmeSDK - The WME SDK instance
+   * @param {Object} venue - The venue object
+   */
+  function checkAndUpdateVenueAddress(wmeSDK, venue) {
+    checkExistingHouseNumber(wmeSDK, venue)
+      .then(hasHouseNumber => {
+        if (hasHouseNumber) {
+          WazeWrap.Alerts.warning('POI Shortcut', 'Venue already has a house number in its address.', false, false, 3000);
+          return;
+        }
+
+        return updateVenueAddressHouseNumber(wmeSDK, venue);
+      })
+      .then(() => {
+        triggerResidentialConversion(venue.name);
+      })
+      .catch(error => {
+        Logger.error('Error updating venue address:', error);
+        WazeWrap.Alerts.error('POI Shortcut', 'Failed to update venue address.', false, false, 3000);
+      });
+  }
+
+  /**
+   * Checks if venue already has a house number in its address
+   * 
+   * @param {Object} wmeSDK - The WME SDK instance
+   * @param {Object} venue - The venue object
+   * @returns {Promise<boolean>} - Promise resolving to true if house number exists
+   */
+  function checkExistingHouseNumber(wmeSDK, venue) {
+    return new Promise((resolve, reject) => {
+      try {
+        const address = wmeSDK.DataModel.Venues.getAddress({ venueId: venue.id });
+        const hasExistingHouseNumber = address && address.houseNumber && address.houseNumber.trim();
+        resolve(!!hasExistingHouseNumber);
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  /**
+   * Updates venue address with the primary name as house number
+   * 
+   * @param {Object} wmeSDK - The WME SDK instance
+   * @param {Object} venue - The venue object
+   * @returns {Promise<void>} - Promise that resolves when update is complete
+   */
+  function updateVenueAddressHouseNumber(wmeSDK, venue) {
+    return new Promise((resolve, reject) => {
+      try {
+        wmeSDK.DataModel.Venues.updateAddress({
+          venueId: venue.id,
+          houseNumber: venue.name
+        });
+        resolve();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  /**
+   * Triggers the residential conversion by clicking the convert button
+   * 
+   * @param {string} venueName - The name of the venue being converted
+   */
+  function triggerResidentialConversion(venueName) {
+    // Small delay to ensure UI updates after address change
+    setTimeout(() => {
+      const buttonClicked = clickConvertToResidentialButton();
+      
+      if (buttonClicked) {
+        WazeWrap.Alerts.success('POI Shortcut', `Successfully converted venue "${venueName}" to residential.`, false, false, 4000);
+      } else {
+        WazeWrap.Alerts.warning('POI Shortcut', `House number set to "${venueName}". Please manually click "Convert to residential" button.`, false, false, 4000);
+      }
+    }, 500);
+  }
+
+  /**
+   * Attempts to click the convert to residential button
+   * 
+   * @returns {boolean} - True if button was found and clicked
+   */
+  function clickConvertToResidentialButton() {
+    const selectors = [
+      'wz-button.toggle-residential-button[color="secondary"][size="sm"]',
+      'wz-button.toggle-residential-button',
+      '.toggle-residential-control wz-button'
+    ];
+
+    for (const selector of selectors) {
+      const button = document.querySelector(selector);
+      
+      if (button && button.getAttribute('disabled') !== 'true') {
+        button.click();
+        Logger.info(`Clicked convert to residential button using selector: ${selector}`);
+        return true;
+      }
+    }
+
+    Logger.warn('Convert to residential button not found or disabled');
+    return false;
+  }  // Function to create POI from shortcut slot
   function createPOIFromShortcut(slotNumber, wmeSDK) {
     try {
       // Get selected values from the UI for this item
@@ -914,7 +1145,7 @@ Fix for multiple name swapping buttons displayed when used with WME PIE.`;
       const geomType = $(`#poiGeom${slotNumber}`).val();
 
       if (!cat || cat === '') {
-        console.warn(`POI Shortcut ${slotNumber}: No category selected`);
+        Logger.warn(`POI Shortcut ${slotNumber}: No category selected`);
         return;
       }
       // Show WazeWrap alert with POI info before drawing
@@ -963,13 +1194,13 @@ Fix for multiple name swapping buttons displayed when used with WME PIE.`;
         })
         .catch((err) => {
           if (err && err.name === 'InvalidStateError') {
-            console.log('POI drawing was cancelled by the user.');
+            Logger.info('POI drawing was cancelled by the user.');
           } else {
-            console.error('Error during POI drawing:', err);
+            Logger.error('Error during POI drawing:', err);
           }
         });
     } catch (error) {
-      console.error(`Error creating POI from shortcut ${slotNumber}:`, error);
+      Logger.error(`Error creating POI from shortcut ${slotNumber}:`, error);
     }
   }
 
@@ -994,17 +1225,17 @@ Fix for multiple name swapping buttons displayed when used with WME PIE.`;
             return;
           }
         } else {
-          console.warn('Hazard group toggle not found');
+          Logger.warn('Hazard group toggle not found');
         }
 
         // If group is already enabled, directly enable the specific layer
         enableSpecificHazardLayer(hazardLayerId, callback);
-      }, 50);
+      }, UI_ELEMENT_WAIT_DELAY);
     } catch (error) {
-      console.error('Error enabling hazard layers:', error);
+      Logger.error('Error enabling hazard layers:', error);
       // Execute callback even if there's an error to prevent hanging
       if (callback && typeof callback === 'function') {
-        setTimeout(callback, 100);
+        setTimeout(callback, RETRY_INJECTION_DELAY);
       }
     }
   }
@@ -1034,7 +1265,7 @@ Fix for multiple name swapping buttons displayed when used with WME PIE.`;
             }
           }
         } else {
-          console.warn(`Hazard layer element not found: ${hazardLayerId}`);
+          Logger.warn(`Hazard layer element not found: ${hazardLayerId}`);
           // Execute callback even if element not found to prevent hanging
           if (callback && typeof callback === 'function') {
             setTimeout(callback, 100);
@@ -1047,10 +1278,10 @@ Fix for multiple name swapping buttons displayed when used with WME PIE.`;
         }
       }
     } catch (error) {
-      console.error('Error enabling specific hazard layer:', error);
+      Logger.error('Error enabling specific hazard layer:', error);
       // Execute callback even if there's an error to prevent hanging
       if (callback && typeof callback === 'function') {
-        setTimeout(callback, 100);
+        setTimeout(callback, RETRY_INJECTION_DELAY);
       }
     }
   }
@@ -1083,19 +1314,22 @@ Fix for multiple name swapping buttons displayed when used with WME PIE.`;
   }
 
   function WMEKSLoadKeyboardShortcuts(scriptName) {
-    console.log('WMEKSLoadKeyboardShortcuts(' + scriptName + ')');
-    if (localStorage[scriptName + 'KBS'])
-      for (var shortcuts = JSON.parse(localStorage[scriptName + 'KBS']), i = 0; i < shortcuts.length; i++)
+    Logger.info(`Loading keyboard shortcuts for ${scriptName}`);
+    if (localStorage[scriptName + 'KBS']) {
+      const shortcuts = JSON.parse(localStorage[scriptName + 'KBS']);
+      for (let i = 0; i < shortcuts.length; i++) {
         try {
           W.accelerators._registerShortcuts(shortcuts[i]);
         } catch (error) {
-          console.log(error);
+          Logger.error('Error registering shortcut:', error);
         }
+      }
+    }
   }
 
   function WMEKSSaveKeyboardShortcuts(scriptName) {
-    console.log('WMEKSSaveKeyboardShortcuts(' + scriptName + ')');
-    var shortcuts = [];
+    Logger.info(`Saving keyboard shortcuts for ${scriptName}`);
+    const shortcuts = [];
     for (var actionName in W.accelerators.Actions) {
       var shortcutString = '';
       if (W.accelerators.Actions[actionName].group == scriptName) {
@@ -1138,7 +1372,7 @@ Fix for multiple name swapping buttons displayed when used with WME PIE.`;
     // Only run if a venue is selected
     const selection = wmeSDK.Editing.getSelection();
     if (!selection || selection.objectType !== 'venue' || !selection.ids || selection.ids.length !== 1) {
-      console.warn('No venue selected for name swapping');
+      Logger.warn('No venue selected for name swapping');
       return;
     }
 
@@ -1146,19 +1380,19 @@ Fix for multiple name swapping buttons displayed when used with WME PIE.`;
     const venue = wmeSDK.DataModel.Venues.getById({ venueId });
 
     if (!venue) {
-      console.warn('Venue not found');
+      Logger.warn('Venue not found');
       return;
     }
 
     // Check if venue has a name and at least one alias
     if (!venue.name || !venue.aliases || venue.aliases.length === 0) {
-      console.warn('Venue must have both a primary name and at least one alias to swap');
+      Logger.warn('Venue must have both a primary name and at least one alias to swap');
       return;
     }
 
     // Validate alias index
     if (aliasIndex < 0 || aliasIndex >= venue.aliases.length) {
-      console.warn(`Invalid alias index: ${aliasIndex}. Available aliases: ${venue.aliases.length}`);
+      Logger.warn(`Invalid alias index: ${aliasIndex}. Available aliases: ${venue.aliases.length}`);
       return;
     }
 
@@ -1178,7 +1412,7 @@ Fix for multiple name swapping buttons displayed when used with WME PIE.`;
         aliases: newAliases,
       });
 
-      console.log(`Swapped names: "${currentPrimaryName}" ↔ "${targetAlias}" (alias index: ${aliasIndex})`);
+      Logger.info(`Swapped names: "${currentPrimaryName}" ↔ "${targetAlias}" (alias index: ${aliasIndex})`);
 
       // Re-inject swap buttons so icon appears immidiately
       setTimeout(function() {
@@ -1186,57 +1420,107 @@ Fix for multiple name swapping buttons displayed when used with WME PIE.`;
       }, 150);
 
     } catch (error) {
-      console.error('Error swapping venue names:', error);
+      Logger.error('Error swapping venue names:', error);
     }
   }
 
   function injectSwapNamesButton(wmeSDK) {
+    // Clean up existing observer when selection changes
+    disconnectAliasObserver();
+
     // Only run if a venue is selected
     const selection = wmeSDK.Editing.getSelection();
-    if (!selection || selection.objectType !== 'venue' || !selection.ids || selection.ids.length !== 1) return;
+    if (!selection || selection.objectType !== 'venue' || !selection.ids || selection.ids.length !== 1) {
+      return;
+    }
 
     const venueId = selection.ids[0];
     const venue = wmeSDK.DataModel.Venues.getById({ venueId });
 
     if (!venue) return;
 
-    // Wait for the venue aliases section to exist
-    function tryInjectSwapButton() {
-      // Look for the aliases list and inject button into ALL alias items' actions containers
-      const $aliasesList = $('.aliases-list');
-      let foundAliases = false;
+    // Setup MutationObserver to watch for changes in aliases list
+    function setupAliasObserver() {
+      const aliasesList = document.querySelector('.aliases-list');
+      if (!aliasesList) return;
 
-      if ($aliasesList.length > 0) {
-        // Find ALL alias items and add swap button to each
-        $aliasesList.find('wz-list-item').each(function (index) {
-          const $aliasItem = $(this);
-          const $actionsContainer = $aliasItem.find('div[slot="actions"].alias-item-actions');
-
-            if ($actionsContainer.length > 0) {
-              // Remove unwanted "To Name" button from other scripts
-              $actionsContainer.find('div.makePrimary.alias-item-action').filter(function() {
-                return $(this).text().trim() === 'To Name';
-              }).remove();
-            // Check if swap button already exists in this specific alias item
-            if ($actionsContainer.find('.swap-names-btn').length === 0) {
-              foundAliases = true;
-
-              // Check if venue has both name and aliases before showing button
-              const hasSwappableNames = venue.name && venue.aliases && venue.aliases.length > 0;
-              if (!hasSwappableNames) return true; // Continue to next iteration
-
-              // Create swap button for this specific alias (swap with the alias at this index)
-              const buttonHtml = `
-                <wz-button color="blue" size="sm" class="alias-item-action alias-item-action-swap swap-names-btn" title="Swap primary name with this alias" data-alias-index="${index}">
-                  <i class="w-icon w-icon-arrow-up alias-item-action-icon"></i>
-                </wz-button>
-              `;
-
-              $actionsContainer.prepend(buttonHtml);
+      try {
+        aliasListObserver = new MutationObserver((mutations) => {
+          let shouldReinject = false;
+          
+          mutations.forEach((mutation) => {
+            if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+              for (const node of mutation.addedNodes) {
+                if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'WZ-LIST-ITEM') {
+                  shouldReinject = true;
+                  break;
+                }
+              }
             }
+          });
+          
+          if (shouldReinject) {
+            setTimeout(() => tryInjectSwapButton(), ALIAS_INJECTION_DELAY);
           }
         });
+        
+        aliasListObserver.observe(aliasesList, {
+          childList: true,
+          subtree: true
+        });
+      } catch (error) {
+        Logger.warn('Error setting up alias observer:', error);
       }
+    }
+
+    // Wait for the venue aliases section to exist and inject swap buttons
+    function tryInjectSwapButton() {
+      const $aliasesList = $('.aliases-list');
+      
+      if ($aliasesList.length === 0) {
+        setTimeout(tryInjectSwapButton, RETRY_INJECTION_DELAY);
+        return;
+      }
+
+      // Setup observer for this aliases list if not already done
+      if (!aliasListObserver) {
+        setupAliasObserver();
+      }
+
+      let foundAliases = false;
+
+      // Process each alias item and add swap button if needed
+      $aliasesList.find('wz-list-item').each(function (index) {
+        const $aliasItem = $(this);
+        const $actionsContainer = $aliasItem.find('div[slot="actions"].alias-item-actions');
+
+        if ($actionsContainer.length === 0) return true; // Continue to next iteration
+
+        // Remove unwanted "To Name" button from other scripts
+        $actionsContainer.find('div.makePrimary.alias-item-action').filter(function() {
+          return $(this).text().trim() === 'To Name';
+        }).remove();
+
+        // Check if swap button already exists in this specific alias item
+        if ($actionsContainer.find('.swap-names-btn').length > 0) {
+          foundAliases = true;
+          return true; // Continue to next iteration
+        }
+
+        // Check if venue has both name and aliases before showing button
+        const hasSwappableNames = venue.name && venue.aliases && venue.aliases.length > 0;
+        if (!hasSwappableNames) return true; // Continue to next iteration
+
+        // Create swap button for this specific alias
+        const buttonHtml = `
+          <wz-button color="blue" size="sm" class="alias-item-action alias-item-action-swap swap-names-btn" title="Swap primary name with this alias" data-alias-index="${index}">
+            <i class="w-icon w-icon-arrow-up alias-item-action-icon"></i>
+          </wz-button>
+        `;
+
+        $actionsContainer.prepend(buttonHtml);
+        foundAliases = true;
+      });
 
       // Fallback method if no aliases found
       // if (!foundAliases) {
@@ -1260,20 +1544,25 @@ Fix for multiple name swapping buttons displayed when used with WME PIE.`;
       //   }
       // }
 
+      // Retry if no aliases found yet
       if (!foundAliases) {
-        setTimeout(tryInjectSwapButton, 100);
+        setTimeout(tryInjectSwapButton, RETRY_INJECTION_DELAY);
         return;
       }
 
-      // Button click handler for all swap buttons
+      // Attach click handler for all swap buttons
       $('.swap-names-btn')
         .off('click.swapnames')
         .on('click.swapnames', function (e) {
           e.preventDefault();
+          e.stopPropagation();
+          
           const aliasIndex = parseInt($(this).attr('data-alias-index') || '0', 10);
           swapPrimaryAndAliasNames(wmeSDK, aliasIndex);
         });
     }
+    
+    // Start the injection process
     tryInjectSwapButton();
   }
 
@@ -1301,7 +1590,7 @@ Fix for multiple name swapping buttons displayed when used with WME PIE.`;
     function tryInjectBrandButtons() {
       const $catControl = $('.categories-control');
       if ($catControl.length === 0) {
-        setTimeout(tryInjectBrandButtons, 150);
+        setTimeout(tryInjectBrandButtons, BRAND_BUTTON_RETRY_DELAY);
         return;
       }
       // Prevent duplicate buttons
@@ -1504,7 +1793,7 @@ Fix for multiple name swapping buttons displayed when used with WME PIE.`;
       bootstrap({ scriptUpdateMonitor: { downloadUrl } });
       WazeWrap.Interface.ShowScriptUpdate(scriptName, scriptVersion, updateMessage, downloadUrl, forumURL);
     } else {
-      setTimeout(scriptupdatemonitor, 250);
+      setTimeout(scriptupdatemonitor, SCRIPT_UPDATE_MONITOR_DELAY);
     }
   }
   // Start the "scriptupdatemonitor"
@@ -1512,6 +1801,17 @@ Fix for multiple name swapping buttons displayed when used with WME PIE.`;
   console.log(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
+2025.08.19.04
+  - Enhanced "Convert OTHER to Residential" with professional code refactoring and improved reliability.
+  - Added comprehensive JSDoc documentation and modular function structure for better maintainability.
+  - Improved error handling, user feedback, and multiple fallback strategies for button clicking.
+  - Now fully automates the conversion process including clicking the "Convert to residential" button.
+  - Compatible with new WME v2.309 house number types for both Residential Point Places (RPP) and venues.
+2025.08.19.03
+  - Added new shortcut "Convert OTHER to Residential" that prepares OTHER type venues for residential conversion.
+  - When conditions are met (venue is OTHER type, name matches pattern like building numbers with Cyrillic characters, no existing house numbers), 
+    the function copies the primary name to house numbers. User then manually clicks WME's "Convert to residential" button.
+  - Simplified functionality to let WME handle the actual conversion process (RPP, etc.).
 2025.08.18.01
   - Fix for multiple name swapping buttons displayed when used with WME PIE.
   2025.08.17.02
