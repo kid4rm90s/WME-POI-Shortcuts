@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.08.27.1
+// @version         2025.08.27.2
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -20,7 +20,7 @@
 https: (function () {
   ('use strict');
 
-  const updateMessage = '<br>Memory leak fixes and performance improvements to prevent WME slowdowns during prolonged panning.</br>';
+  const updateMessage = '<br>Now when adding or selecting the RPP, it will auto open the address field.</br>';
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
   const downloadUrl = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/code/wme-poi-shortcuts.user.js';
@@ -270,9 +270,9 @@ https: (function () {
         aliasListObserver = null;
       }
     }
-    
+
     // Disconnect all individual alias observers
-    aliasObservers.forEach(observer => {
+    aliasObservers.forEach((observer) => {
       try {
         observer.disconnect();
       } catch (error) {
@@ -280,7 +280,7 @@ https: (function () {
       }
     });
     aliasObservers.clear();
-    
+
     // Disconnect name attribute observer
     if (nameAttrObserver) {
       try {
@@ -291,7 +291,7 @@ https: (function () {
         nameAttrObserver = null;
       }
     }
-    
+
     observedAliasItems.clear();
     nameInputObserved = false;
   }
@@ -335,6 +335,7 @@ https: (function () {
   // Load GLE enabled state from localStorage
   let gleEnabled = false;
   let gleShowTempClosed = true;
+  let openEditAddressOnRPP = false;
   try {
     gleEnabled = JSON.parse(localStorage.getItem('wme-poi-shortcuts-gle-enabled'));
   } catch (e) {
@@ -344,6 +345,11 @@ https: (function () {
     gleShowTempClosed = JSON.parse(localStorage.getItem('wme-poi-shortcuts-gle-show-temp-closed'));
   } catch (e) {
     gleShowTempClosed = true;
+  }
+  try {
+    openEditAddressOnRPP = JSON.parse(localStorage.getItem('wme-poi-shortcuts-open-edit-address-rpp'));
+  } catch (e) {
+    openEditAddressOnRPP = false;
   }
   let GLE = {
     enabled: gleEnabled,
@@ -386,16 +392,6 @@ https: (function () {
     }
   }
 
-  // Add GLE controls to the sidebar UI
-  function buildGLEControls() {
-    return `
-    <div style="margin:6px 0 10px 0; padding:4px 8px; background:transparent; border-radius:4px;">
-      <label style="font-size:10px; font-weight:bold;">
-        <input type="checkbox" id="_cbEnableGLE" ${GLE && GLE.enabled ? 'checked' : ''} /> Enable Google Link Enhancer
-      </label>
-    </div>
-  `;
-  }
   function initScript() {
     // initialize the sdk with your script id and script name
     const wmeSDK = typeof unsafeWindow !== 'undefined' && unsafeWindow.getWmeSdk ? unsafeWindow.getWmeSdk({ scriptId: 'wme-poi', scriptName: 'WME POI' }) : getWmeSdk({ scriptId: 'wme-poi', scriptName: 'WME POI' });
@@ -472,9 +468,12 @@ https: (function () {
         disconnectAliasObserver();
         $('.gas-station-brand-btn, .charging-station-brand-btn').off('click').remove();
         $('.swap-names-btn').off('click.swapnames').remove();
-        
+
         debouncedInjectButtonStation(wmeSDK);
         debouncedInjectSwapButton(wmeSDK);
+        
+        // Handle edit address for residential venues if setting is enabled
+        handleEditAddressForRPP(wmeSDK);
       },
     });
   }
@@ -653,6 +652,17 @@ https: (function () {
     for (let i = 1; i <= 10; i++) {
       html += buildItemOption(i);
     }
+    // Add checkboxes before the keyboard shortcuts message
+    html += `
+    <div style="margin:12px 0 8px 0; padding:4px 8px; background:transparent; border-radius:4px;">
+      <label style="font-size:10px; font-weight:bold;">
+        <input type="checkbox" id="_cbEnableGLE" ${GLE && GLE.enabled ? 'checked' : ''} /> Enable Google Link Enhancer
+      </label>
+      <br>
+      <label style="font-size:10px; font-weight:bold; margin-top:4px; display:inline-block;">
+        <input type="checkbox" id="_cbOpenEditAddressRPP" ${openEditAddressOnRPP ? 'checked' : ''} /> Open edit address when RPP selected
+      </label>
+    </div>`;
     html += `<div style='font-size:10px;color:#888;margin-top:8px;'>You can bind keyboard shortcuts using WME's native shortcuts section.</div>`;
     setTimeout(() => {
       for (let i = 1; i <= 10; i++) {
@@ -1183,7 +1193,53 @@ https: (function () {
 
     Logger.warn('Convert to residential button not found or disabled');
     return false;
-  } // Function to create POI from shortcut slot
+  }
+
+  /**
+   * Clicks the edit address button for residential venues when the setting is enabled
+   *
+   * @param {Object} wmeSDK - The WME SDK instance
+   */
+  function handleEditAddressForRPP(wmeSDK) {
+    if (!openEditAddressOnRPP) {
+      Logger.info('Open edit address for RPP is disabled');
+      return;
+    }
+    try {
+      const selection = wmeSDK.Editing.getSelection();
+      if (!selection || selection.objectType !== 'venue' || !selection.ids || selection.ids.length !== 1) {
+        Logger.info('No venue selected or invalid selection');
+        return;
+      }
+      const venueId = selection.ids[0];
+      const venue = wmeSDK.DataModel.Venues.getById({ venueId });
+      if (!venue) {
+        Logger.warn('Venue not found');
+        return;
+      }
+      Logger.info('Venue categories:', venue.categories);
+      const isResidential = venue.categories && venue.categories.includes('RESIDENTIAL');
+      if (isResidential) {
+        Logger.info('Residential venue detected, attempting to click edit address button');
+        setTimeout(() => {
+          // Only select the exact icon
+          const editButton = document.querySelector('i.w-icon.w-icon-pencil-fill.edit-button[aria-disabled="false"]');
+          if (editButton) {
+            editButton.click();
+            Logger.info('Clicked EXACT edit address icon for residential venue');
+          } else {
+            Logger.warn('EXACT edit address icon not found for residential venue');
+          }
+        }, 300);
+      } else {
+        Logger.info('Selected venue is not residential, skipping edit address action');
+      }
+    } catch (error) {
+      Logger.error('Error in handleEditAddressForRPP:', error);
+    }
+  }
+
+  // Function to create POI from shortcut slot
   function createPOIFromShortcut(slotNumber, wmeSDK) {
     try {
       // Get selected values from the UI for this item
@@ -1449,7 +1505,7 @@ https: (function () {
 
     // Create new aliases array
     let newAliases = [...venue.aliases];
-    
+
     // If primary name exists, replace the target alias with it
     // If primary name is empty, just remove the target alias
     if (currentPrimaryName.trim() !== '') {
@@ -1581,7 +1637,7 @@ https: (function () {
         Logger.warn('Max retry attempts reached for swap button injection');
         return;
       }
-      
+
       const $aliasItems = $('div[slot="item-key"].alias-item-content').closest('wz-list-item');
 
       if ($aliasItems.length === 0) {
@@ -1710,7 +1766,7 @@ https: (function () {
         Logger.warn('Max retry attempts reached for brand button injection');
         return;
       }
-      
+
       const $catControl = $('.categories-control');
       if ($catControl.length === 0) {
         setTimeout(() => tryInjectBrandButtons(attemptCount + 1), BRAND_BUTTON_RETRY_DELAY);
@@ -1867,7 +1923,6 @@ https: (function () {
             <div style="font-weight: bold; font-size: 14px; color: #333;">${scriptName}</div>
             <div style="font-size: 12px; color: #666;">${scriptVersion}</div>
           </div>
-          ${buildGLEControls()}
           ${buildAllItemOptions()}
         </div>`;
       // Add event listeners for GLE controls
@@ -1905,6 +1960,19 @@ https: (function () {
             }
           });
         }
+
+        // Add event listener for Open Edit Address on RPP checkbox
+        const cbOpenEditAddressRPP = document.getElementById('_cbOpenEditAddressRPP');
+        if (cbOpenEditAddressRPP) {
+          // Restore checkbox state from localStorage
+          cbOpenEditAddressRPP.checked = !!openEditAddressOnRPP;
+          cbOpenEditAddressRPP.addEventListener('change', function () {
+            // Save state to localStorage
+            openEditAddressOnRPP = this.checked;
+            localStorage.setItem('wme-poi-shortcuts-open-edit-address-rpp', JSON.stringify(this.checked));
+            Logger.info(`Open edit address on RPP setting ${this.checked ? 'enabled' : 'disabled'}`);
+          });
+        }
       }, 0);
     } catch (e) {
       console.error('Failed to register POI Shortcuts script tab:', e);
@@ -1924,7 +1992,9 @@ https: (function () {
   console.log(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
-2025.08.27.01
+2025.08.27.02
+  - Now when adding or selecting the RPP, it will auto open the address field.
+  2025.08.27.01
   - Fixed major memory leaks causing WME slowdowns after prolonged panning:
     * Properly cleanup MutationObservers and event listeners on selection changes
     * Added debouncing to prevent excessive function calls during UI updates
