@@ -1,13 +1,12 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.08.19.03
+// @version         2025.08.27.1
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
 // @license         GNU GPLv3
 // @connect         greasyfork.org
-// @contributionURL https://github.com/WazeDev/Thank-The-Authors
 // @grant           GM_xmlhttpRequest
 // @grant           GM_addElement
 // @require         https://greasyfork.org/scripts/24851-wazewrap/code/WazeWrap.js
@@ -21,8 +20,7 @@
 https: (function () {
   ('use strict');
 
-  const updateMessage = 
-    '<br>Enhanced "Convert OTHER to Residential" functionality using shortcut key.</br><br>The shortcut now automatically copies venue names to house numbers and converts to residential places. </br><br>Compatibility with the New WME v2.309 with the types of House Numbers you can now map in WME Production for both Residential Point Places (RPP) and venues.</br>'
+  const updateMessage = '<br>Memory leak fixes and performance improvements to prevent WME slowdowns during prolonged panning.</br>';
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
   const downloadUrl = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/code/wme-poi-shortcuts.user.js';
@@ -37,7 +35,6 @@ https: (function () {
           primaryName: 'NOC',
           brand: 'Nepal Oil Corporation',
           website: 'noc.org.np',
-        
         },
       ],
     },
@@ -223,21 +220,43 @@ https: (function () {
     },
   };
 
-  // Global variable to track the MutationObserver for aliases list
+  // Debounce utility to prevent excessive function calls
+  function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+      const later = () => {
+        clearTimeout(timeout);
+        func(...args);
+      };
+      clearTimeout(timeout);
+      timeout = setTimeout(later, wait);
+    };
+  }
+
+  // Debounced version of injection functions
+  const debouncedInjectSwapButton = debounce((wmeSDK) => injectSwapNamesButton(wmeSDK), 100);
+  const debouncedInjectButtonStation = debounce((wmeSDK) => injectButtonStation(wmeSDK), 100);
+
+  // Global variables to track observers and prevent duplicates
   let aliasListObserver = null;
-  
+  let observedAliasItems = new Set();
+  let nameInputObserved = false;
+  let aliasObservers = new Set(); // Track individual alias observers
+  let nameAttrObserver = null; // Track name attribute observer
+
   // Constants for timeouts and delays
   const ALIAS_INJECTION_DELAY = 50;
   const RETRY_INJECTION_DELAY = 100;
   const BRAND_BUTTON_RETRY_DELAY = 150;
   const SCRIPT_UPDATE_MONITOR_DELAY = 250;
   const UI_ELEMENT_WAIT_DELAY = 50;
+  const MAX_RETRY_ATTEMPTS = 20; // Prevent infinite recursion
 
   // Logging utility with consistent prefixes
   const Logger = {
     info: (message, ...args) => console.log(`[WME POI Shortcuts] ${message}`, ...args),
     warn: (message, ...args) => console.warn(`[WME POI Shortcuts] ${message}`, ...args),
-    error: (message, ...args) => console.error(`[WME POI Shortcuts] ${message}`, ...args)
+    error: (message, ...args) => console.error(`[WME POI Shortcuts] ${message}`, ...args),
   };
 
   // Helper function to safely disconnect observer
@@ -251,6 +270,30 @@ https: (function () {
         aliasListObserver = null;
       }
     }
+    
+    // Disconnect all individual alias observers
+    aliasObservers.forEach(observer => {
+      try {
+        observer.disconnect();
+      } catch (error) {
+        Logger.warn('Error disconnecting individual alias observer:', error);
+      }
+    });
+    aliasObservers.clear();
+    
+    // Disconnect name attribute observer
+    if (nameAttrObserver) {
+      try {
+        nameAttrObserver.disconnect();
+        nameAttrObserver = null;
+      } catch (error) {
+        Logger.warn('Error disconnecting name attribute observer:', error);
+        nameAttrObserver = null;
+      }
+    }
+    
+    observedAliasItems.clear();
+    nameInputObserved = false;
   }
 
   if (typeof unsafeWindow !== 'undefined' && unsafeWindow.SDK_INITIALIZED) {
@@ -406,8 +449,8 @@ https: (function () {
       registerSidebarScriptTab(wmeSDK);
       // Check for initial venue selection and inject swap button if needed
       setTimeout(() => {
-        injectButtonStation(wmeSDK);
-        injectSwapNamesButton(wmeSDK);
+        debouncedInjectButtonStation(wmeSDK);
+        debouncedInjectSwapButton(wmeSDK);
       }, 500); // Small delay to ensure UI is fully loaded
     });
     wmeSDK.Events.on({
@@ -425,8 +468,13 @@ https: (function () {
     wmeSDK.Events.on({
       eventName: 'wme-selection-changed',
       eventHandler: () => {
-        injectButtonStation(wmeSDK);
-        injectSwapNamesButton(wmeSDK);
+        // Clean up old observers/handlers before setting up new ones
+        disconnectAliasObserver();
+        $('.gas-station-brand-btn, .charging-station-brand-btn').off('click').remove();
+        $('.swap-names-btn').off('click.swapnames').remove();
+        
+        debouncedInjectButtonStation(wmeSDK);
+        debouncedInjectSwapButton(wmeSDK);
       },
     });
   }
@@ -939,6 +987,10 @@ https: (function () {
     window.addEventListener(
       'beforeunload',
       function () {
+        // Clean up observers and event handlers before page unload
+        disconnectAliasObserver();
+        $(document).off('focusout.wme-poi-shortcuts');
+        $(document).off('click.wme-poi-shortcuts-alias');
         WMEKSSaveKeyboardShortcuts('WME-POI-Shortcuts');
       },
       false
@@ -946,9 +998,9 @@ https: (function () {
   }
 
   /**
-   * Converts OTHER type venues to residential places by copying the primary name 
+   * Converts OTHER type venues to residential places by copying the primary name
    * to the venue address house number and triggering the conversion button.
-   * 
+   *
    * @param {Object} wmeSDK - The WME SDK instance
    */
   function convertOtherToResidential(wmeSDK) {
@@ -961,7 +1013,6 @@ https: (function () {
       if (!hasValidPrimaryName(venue)) return;
 
       checkAndUpdateVenueAddress(wmeSDK, venue);
-
     } catch (error) {
       Logger.error('Error in convertOtherToResidential:', error);
       WazeWrap.Alerts.error('POI Shortcut', 'An unexpected error occurred during conversion.', false, false, 3000);
@@ -970,13 +1021,13 @@ https: (function () {
 
   /**
    * Gets the currently selected venue from WME
-   * 
+   *
    * @param {Object} wmeSDK - The WME SDK instance
    * @returns {Object|null} - The selected venue or null if invalid selection
    */
   function getSelectedVenue(wmeSDK) {
     const selection = wmeSDK.Editing.getSelection();
-    
+
     if (!selection || selection.objectType !== 'venue' || !selection.ids || selection.ids.length !== 1) {
       WazeWrap.Alerts.warning('POI Shortcut', 'Please select a venue first.', false, false, 3000);
       return null;
@@ -995,17 +1046,17 @@ https: (function () {
 
   /**
    * Validates if the venue is of type OTHER
-   * 
+   *
    * @param {Object} venue - The venue object
    * @returns {boolean} - True if venue is valid OTHER type
    */
   function isValidOtherVenue(venue) {
     const otherCategories = ['OTHER', 'other'];
     const venueCategories = venue.categories || [];
-    const isOther = venueCategories.some(cat => otherCategories.includes(cat));
-    
+    const isOther = venueCategories.some((cat) => otherCategories.includes(cat));
+
     console.log('Venue categories:', venueCategories);
-    
+
     if (!isOther) {
       WazeWrap.Alerts.warning('POI Shortcut', `This function only works with venues of type OTHER. Actual: ${venueCategories.join(', ')}`, false, false, 3000);
       return false;
@@ -1016,7 +1067,7 @@ https: (function () {
 
   /**
    * Validates if the venue has a valid primary name
-   * 
+   *
    * @param {Object} venue - The venue object
    * @returns {boolean} - True if venue has valid primary name
    */
@@ -1031,13 +1082,13 @@ https: (function () {
 
   /**
    * Checks venue address and updates it if needed
-   * 
+   *
    * @param {Object} wmeSDK - The WME SDK instance
    * @param {Object} venue - The venue object
    */
   function checkAndUpdateVenueAddress(wmeSDK, venue) {
     checkExistingHouseNumber(wmeSDK, venue)
-      .then(hasHouseNumber => {
+      .then((hasHouseNumber) => {
         if (hasHouseNumber) {
           WazeWrap.Alerts.warning('POI Shortcut', 'Venue already has a house number in its address.', false, false, 3000);
           return;
@@ -1048,7 +1099,7 @@ https: (function () {
       .then(() => {
         triggerResidentialConversion(venue.name);
       })
-      .catch(error => {
+      .catch((error) => {
         Logger.error('Error updating venue address:', error);
         WazeWrap.Alerts.error('POI Shortcut', 'Failed to update venue address.', false, false, 3000);
       });
@@ -1056,7 +1107,7 @@ https: (function () {
 
   /**
    * Checks if venue already has a house number in its address
-   * 
+   *
    * @param {Object} wmeSDK - The WME SDK instance
    * @param {Object} venue - The venue object
    * @returns {Promise<boolean>} - Promise resolving to true if house number exists
@@ -1075,7 +1126,7 @@ https: (function () {
 
   /**
    * Updates venue address with the primary name as house number
-   * 
+   *
    * @param {Object} wmeSDK - The WME SDK instance
    * @param {Object} venue - The venue object
    * @returns {Promise<void>} - Promise that resolves when update is complete
@@ -1085,7 +1136,7 @@ https: (function () {
       try {
         wmeSDK.DataModel.Venues.updateAddress({
           venueId: venue.id,
-          houseNumber: venue.name
+          houseNumber: venue.name,
         });
         resolve();
       } catch (error) {
@@ -1096,14 +1147,14 @@ https: (function () {
 
   /**
    * Triggers the residential conversion by clicking the convert button
-   * 
+   *
    * @param {string} venueName - The name of the venue being converted
    */
   function triggerResidentialConversion(venueName) {
     // Small delay to ensure UI updates after address change
     setTimeout(() => {
       const buttonClicked = clickConvertToResidentialButton();
-      
+
       if (buttonClicked) {
         WazeWrap.Alerts.success('POI Shortcut', `Successfully converted venue "${venueName}" to residential.`, false, false, 4000);
       } else {
@@ -1114,19 +1165,15 @@ https: (function () {
 
   /**
    * Attempts to click the convert to residential button
-   * 
+   *
    * @returns {boolean} - True if button was found and clicked
    */
   function clickConvertToResidentialButton() {
-    const selectors = [
-      'wz-button.toggle-residential-button[color="secondary"][size="sm"]',
-      'wz-button.toggle-residential-button',
-      '.toggle-residential-control wz-button'
-    ];
+    const selectors = ['wz-button.toggle-residential-button[color="secondary"][size="sm"]', 'wz-button.toggle-residential-button', '.toggle-residential-control wz-button'];
 
     for (const selector of selectors) {
       const button = document.querySelector(selector);
-      
+
       if (button && button.getAttribute('disabled') !== 'true') {
         button.click();
         Logger.info(`Clicked convert to residential button using selector: ${selector}`);
@@ -1136,7 +1183,7 @@ https: (function () {
 
     Logger.warn('Convert to residential button not found or disabled');
     return false;
-  }  // Function to create POI from shortcut slot
+  } // Function to create POI from shortcut slot
   function createPOIFromShortcut(slotNumber, wmeSDK) {
     try {
       // Get selected values from the UI for this item
@@ -1162,7 +1209,7 @@ https: (function () {
             category: cat,
             geometry: geometry,
           });
-          
+
           // Add a small delay to ensure the venue is fully created before selecting it
           setTimeout(() => {
             wmeSDK.Editing.setSelection({
@@ -1172,7 +1219,7 @@ https: (function () {
               },
             });
           }, 100);
-          
+
           // Only set lock if lock > 0 (lockRank 1-4)
           if (!isNaN(lock) && lock > 0) {
             setTimeout(() => {
@@ -1384,9 +1431,9 @@ https: (function () {
       return;
     }
 
-    // Check if venue has a name and at least one alias
-    if (!venue.name || !venue.aliases || venue.aliases.length === 0) {
-      Logger.warn('Venue must have both a primary name and at least one alias to swap');
+    // Check if venue has at least one alias to swap
+    if (!venue.aliases || venue.aliases.length === 0) {
+      Logger.warn('Venue must have at least one alias to swap');
       return;
     }
 
@@ -1396,13 +1443,20 @@ https: (function () {
       return;
     }
 
-    // Get current primary name and target alias
-    const currentPrimaryName = venue.name;
+    // Get current primary name (can be empty) and target alias
+    const currentPrimaryName = venue.name || '';
     const targetAlias = venue.aliases[aliasIndex];
 
-    // Create new aliases array with the old primary name replacing the target alias
-    const newAliases = [...venue.aliases];
-    newAliases[aliasIndex] = currentPrimaryName;
+    // Create new aliases array
+    let newAliases = [...venue.aliases];
+    
+    // If primary name exists, replace the target alias with it
+    // If primary name is empty, just remove the target alias
+    if (currentPrimaryName.trim() !== '') {
+      newAliases[aliasIndex] = currentPrimaryName;
+    } else {
+      newAliases.splice(aliasIndex, 1); // Remove the alias that becomes primary
+    }
 
     try {
       // Update venue with swapped names
@@ -1414,17 +1468,42 @@ https: (function () {
 
       Logger.info(`Swapped names: "${currentPrimaryName}" ↔ "${targetAlias}" (alias index: ${aliasIndex})`);
 
-      // Re-inject swap buttons so icon appears immidiately
-      setTimeout(function() {
+      // Re-inject swap buttons so icon appears immediately
+      setTimeout(function () {
         injectSwapNamesButton(wmeSDK);
       }, 150);
-
     } catch (error) {
       Logger.error('Error swapping venue names:', error);
     }
   }
 
   function injectSwapNamesButton(wmeSDK) {
+    // Always disconnect previous observers/listeners before setting up new ones
+    disconnectAliasObserver();
+
+    // Remove any existing event handlers to prevent accumulation
+    $(document).off('focusout.wme-poi-shortcuts');
+    $(document).off('click.wme-poi-shortcuts-alias');
+    document.removeEventListener('venueSelected', handleVenueSelected, true);
+
+    // Define handlers with proper scope
+    function handleVenueSelected() {
+      setTimeout(() => tryInjectSwapButton(), 100);
+    }
+
+    // Ensure swap buttons are injected after venue creation and alias addition
+    // Listen for venue creation (new venue selection)
+    document.addEventListener('venueSelected', handleVenueSelected, true);
+
+    // Listen for alias addition (when alias input loses focus or alias is added)
+    $(document).on('focusout.wme-poi-shortcuts', '.alias-item-content input', function () {
+      debouncedInjectSwapButton(wmeSDK);
+    });
+
+    // Listen for alias addition via button click (if applicable)
+    $(document).on('click.wme-poi-shortcuts-alias', '.add-alias-btn', function () {
+      debouncedInjectSwapButton(wmeSDK);
+    });
     // Clean up existing observer when selection changes
     disconnectAliasObserver();
 
@@ -1442,64 +1521,95 @@ https: (function () {
     // Setup MutationObserver to watch for changes in aliases list
     function setupAliasObserver() {
       const aliasesList = document.querySelector('.aliases-list');
-      if (!aliasesList) return;
+      const nameInput = document.querySelector('input[placeholder*="name" i], input[name*="name" i], .venue-name input, .place-name input');
+      if (!aliasesList && !nameInput) return;
 
       try {
-        aliasListObserver = new MutationObserver((mutations) => {
-          let shouldReinject = false;
-          
-          mutations.forEach((mutation) => {
-            if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-              for (const node of mutation.addedNodes) {
-                if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'WZ-LIST-ITEM') {
-                  shouldReinject = true;
-                  break;
-                }
+        // Observe the aliases list for new alias additions (only if not already observing)
+        if (aliasesList && !aliasListObserver) {
+          aliasListObserver = new MutationObserver((mutations) => {
+            let shouldReinject = false;
+            mutations.forEach((mutation) => {
+              if (mutation.type === 'childList' && (mutation.addedNodes.length > 0 || mutation.removedNodes.length > 0)) {
+                shouldReinject = true;
               }
+            });
+            if (shouldReinject) {
+              debouncedInjectSwapButton(wmeSDK);
             }
           });
-          
-          if (shouldReinject) {
-            setTimeout(() => tryInjectSwapButton(), ALIAS_INJECTION_DELAY);
+          aliasListObserver.observe(aliasesList, { childList: true, subtree: true });
+        }
+
+        // Observe existing alias items for text changes (only if not already observed)
+        const aliasItems = document.querySelectorAll('div[slot="item-key"].alias-item-content');
+        aliasItems.forEach((aliasItem) => {
+          const itemKey = aliasItem.outerHTML;
+          if (!observedAliasItems.has(itemKey)) {
+            observedAliasItems.add(itemKey);
+            const aliasObserver = new MutationObserver(() => {
+              debouncedInjectSwapButton(wmeSDK);
+            });
+            aliasObserver.observe(aliasItem, { childList: true, subtree: true, characterData: true });
+            // Track this observer for proper cleanup
+            aliasObservers.add(aliasObserver);
           }
         });
-        
-        aliasListObserver.observe(aliasesList, {
-          childList: true,
-          subtree: true
-        });
+
+        // Observe name input for changes (only if not already observed)
+        if (nameInput && !nameInputObserved) {
+          nameInputObserved = true;
+          nameInput.addEventListener('input', () => {
+            debouncedInjectSwapButton(wmeSDK);
+          });
+          // Also observe attribute changes (for autofill etc)
+          if (!nameAttrObserver) {
+            nameAttrObserver = new MutationObserver(() => {
+              debouncedInjectSwapButton(wmeSDK);
+            });
+            nameAttrObserver.observe(nameInput, { attributes: true });
+          }
+        }
       } catch (error) {
         Logger.warn('Error setting up alias observer:', error);
       }
     }
 
     // Wait for the venue aliases section to exist and inject swap buttons
-    function tryInjectSwapButton() {
-      const $aliasesList = $('.aliases-list');
+    function tryInjectSwapButton(attemptCount = 0) {
+      if (attemptCount >= MAX_RETRY_ATTEMPTS) {
+        Logger.warn('Max retry attempts reached for swap button injection');
+        return;
+      }
       
-      if ($aliasesList.length === 0) {
-        setTimeout(tryInjectSwapButton, RETRY_INJECTION_DELAY);
+      const $aliasItems = $('div[slot="item-key"].alias-item-content').closest('wz-list-item');
+
+      if ($aliasItems.length === 0) {
+        // Even if no aliases exist yet, set up observers to catch them when they're added
+        setupAliasObserver();
+        setTimeout(() => tryInjectSwapButton(attemptCount + 1), RETRY_INJECTION_DELAY);
         return;
       }
 
-      // Setup observer for this aliases list if not already done
-      if (!aliasListObserver) {
-        setupAliasObserver();
-      }
+      // Setup observer for alias items (in case they weren't set up already)
+      setupAliasObserver();
 
       let foundAliases = false;
 
       // Process each alias item and add swap button if needed
-      $aliasesList.find('wz-list-item').each(function (index) {
+      $aliasItems.each(function (index) {
         const $aliasItem = $(this);
         const $actionsContainer = $aliasItem.find('div[slot="actions"].alias-item-actions');
 
         if ($actionsContainer.length === 0) return true; // Continue to next iteration
 
         // Remove unwanted "To Name" button from other scripts
-        $actionsContainer.find('div.makePrimary.alias-item-action').filter(function() {
-          return $(this).text().trim() === 'To Name';
-        }).remove();
+        $actionsContainer
+          .find('div.makePrimary.alias-item-action')
+          .filter(function () {
+            return $(this).text().trim() === 'To Name';
+          })
+          .remove();
 
         // Check if swap button already exists in this specific alias item
         if ($actionsContainer.find('.swap-names-btn').length > 0) {
@@ -1507,8 +1617,8 @@ https: (function () {
           return true; // Continue to next iteration
         }
 
-        // Check if venue has both name and aliases before showing button
-        const hasSwappableNames = venue.name && venue.aliases && venue.aliases.length > 0;
+        // Check if venue has aliases before showing button (primary name can be empty)
+        const hasSwappableNames = venue.aliases && venue.aliases.length > 0;
         if (!hasSwappableNames) return true; // Continue to next iteration
 
         // Create swap button for this specific alias
@@ -1546,7 +1656,7 @@ https: (function () {
 
       // Retry if no aliases found yet
       if (!foundAliases) {
-        setTimeout(tryInjectSwapButton, RETRY_INJECTION_DELAY);
+        setTimeout(() => tryInjectSwapButton(attemptCount + 1), RETRY_INJECTION_DELAY);
         return;
       }
 
@@ -1556,13 +1666,21 @@ https: (function () {
         .on('click.swapnames', function (e) {
           e.preventDefault();
           e.stopPropagation();
-          
           const aliasIndex = parseInt($(this).attr('data-alias-index') || '0', 10);
           swapPrimaryAndAliasNames(wmeSDK, aliasIndex);
         });
+
+      // If primary name is empty, optionally disable swap buttons
+      if (!venue.name || venue.name.trim() === '') {
+        // Always enable swap buttons if there are aliases
+        $('.swap-names-btn').removeAttr('disabled').attr('title', 'Promote this alias to primary name');
+      } else {
+        $('.swap-names-btn').removeAttr('disabled').attr('title', 'Swap primary name with this alias');
+      }
     }
-    
-    // Start the injection process
+
+    // Start the injection process and setup observers immediately
+    setupAliasObserver();
     tryInjectSwapButton();
   }
 
@@ -1582,15 +1700,20 @@ https: (function () {
     const isPakistan = !!topCountry && (topCountry.name === 'Pakistan' || topCountry.code === 'PK');
     const isGasStation = !!venue && Array.isArray(venue.categories) && venue.categories.includes(gasStationKey);
     const isChargingStation = !!venue && Array.isArray(venue.categories) && venue.categories.includes(chargingStationKey);
-    
+
     // Only show buttons for Nepal gas/charging stations or Pakistan gas stations
     if (!((isGasStation || isChargingStation) && isNepal) && !(isGasStation && isPakistan)) return;
 
     // Show brand buttons for Nepal and Pakistan gas stations, and Nepal charging stations
-    function tryInjectBrandButtons() {
+    function tryInjectBrandButtons(attemptCount = 0) {
+      if (attemptCount >= MAX_RETRY_ATTEMPTS) {
+        Logger.warn('Max retry attempts reached for brand button injection');
+        return;
+      }
+      
       const $catControl = $('.categories-control');
       if ($catControl.length === 0) {
-        setTimeout(tryInjectBrandButtons, BRAND_BUTTON_RETRY_DELAY);
+        setTimeout(() => tryInjectBrandButtons(attemptCount + 1), BRAND_BUTTON_RETRY_DELAY);
         return;
       }
       // Prevent duplicate buttons
@@ -1630,9 +1753,9 @@ https: (function () {
       // Build buttons for each brand
       let buttonsHtml = `<div class='form-group e85 e85-e85-14'><label class='control-label'>Set ${stationTypeName} Brand</label>`;
       countryBrands.forEach((brandObj) => {
-        buttonsHtml += `<button class='waze-btn waze-btn-small waze-btn-white e85 ${buttonClass}' style='border:2px solid #0078d7;border-radius:4px;margin:2px;' data-primary='${brandObj.primaryName}' data-brand='${
-          brandObj.brand
-        }' data-website='${brandObj.website || ''}' data-category='${categoryKey}'>${brandObj.primaryName}</button> `;
+        buttonsHtml += `<button class='waze-btn waze-btn-small waze-btn-white e85 ${buttonClass}' style='border:2px solid #0078d7;border-radius:4px;margin:2px;' data-primary='${brandObj.primaryName}' data-brand='${brandObj.brand}' data-website='${
+          brandObj.website || ''
+        }' data-category='${categoryKey}'>${brandObj.primaryName}</button> `;
       });
       buttonsHtml += `</div>`;
       $catControl.after(buttonsHtml);
@@ -1647,7 +1770,7 @@ https: (function () {
         // Find the selected brand object to get its predefined aliases
         let selectedBrandObj = null;
         if (countryBrands) {
-          selectedBrandObj = countryBrands.find(brandObj => brandObj.primaryName === primaryName);
+          selectedBrandObj = countryBrands.find((brandObj) => brandObj.primaryName === primaryName);
         }
 
         // Read lockRank for the station category from localStorage config
@@ -1672,15 +1795,15 @@ https: (function () {
 
         // Build aliases array: start with existing venue aliases, add current name if different, then add brand aliases
         let aliases = Array.isArray(venue.aliases) ? venue.aliases.slice() : [];
-        
+
         // Add current venue name to aliases if it's different from the selected primaryName
         if (venue.name && venue.name !== primaryName && !aliases.includes(venue.name)) {
           aliases.push(venue.name);
         }
-        
+
         // Add predefined aliases from the brand data
         if (selectedBrandObj && Array.isArray(selectedBrandObj.aliases)) {
-          selectedBrandObj.aliases.forEach(alias => {
+          selectedBrandObj.aliases.forEach((alias) => {
             // Only add if it's not empty and not already in the aliases array
             if (alias && alias.trim() !== '' && !aliases.includes(alias)) {
               aliases.push(alias);
@@ -1801,6 +1924,16 @@ https: (function () {
   console.log(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
+2025.08.27.01
+  - Fixed major memory leaks causing WME slowdowns after prolonged panning:
+    * Properly cleanup MutationObservers and event listeners on selection changes
+    * Added debouncing to prevent excessive function calls during UI updates
+    * Prevented infinite recursion with retry limits for injection functions
+    * Tracked and cleaned up individual alias observers to prevent accumulation
+    * Added proper cleanup on page unload and selection changes
+    * Improved performance by reducing unnecessary DOM queries and event handler registrations
+2025.08.23.01
+- Bug fixes for swapping POI names.
 2025.08.19.04
   - Enhanced "Convert OTHER to Residential" with professional code refactoring and improved reliability.
   - Added comprehensive JSDoc documentation and modular function structure for better maintainability.
