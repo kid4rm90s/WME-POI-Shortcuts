@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.08.27.2
+// @version         2025.08.28.1
 // @description     Various UI changes to make editing faster and easier.
-// @author          kid4rm90s
+// @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
 // @license         GNU GPLv3
 // @connect         greasyfork.org
@@ -20,7 +20,7 @@
 https: (function () {
   ('use strict');
 
-  const updateMessage = '<br>Now when adding or selecting the RPP, it will auto open the address field.</br>';
+  const updateMessage = '<br>Now when adding or selecting the RPP, it will auto open the address field and will select the house number field automatically</br>';
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
   const downloadUrl = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/code/wme-poi-shortcuts.user.js';
@@ -471,7 +471,7 @@ https: (function () {
 
         debouncedInjectButtonStation(wmeSDK);
         debouncedInjectSwapButton(wmeSDK);
-        
+
         // Handle edit address for residential venues if setting is enabled
         handleEditAddressForRPP(wmeSDK);
       },
@@ -1227,6 +1227,26 @@ https: (function () {
           if (editButton) {
             editButton.click();
             Logger.info('Clicked EXACT edit address icon for residential venue');
+
+            // After clicking edit button, wait and then focus house number input inside shadow DOM
+            setTimeout(() => {
+              const wzTextInput = document.querySelector('wz-text-input[placeholder="Add house number"]');
+              if (wzTextInput && wzTextInput.shadowRoot) {
+                const input = wzTextInput.shadowRoot.querySelector('input');
+                if (input) {
+                  input.focus();
+                  input.click();
+                  if (input.value && input.value.length) {
+                    input.setSelectionRange(input.value.length, input.value.length);
+                  }
+                  Logger.info('Focused and clicked on house number input inside shadow DOM');
+                } else {
+                  Logger.warn('Input inside shadow DOM not found');
+                }
+              } else {
+                Logger.warn('wz-text-input element or its shadowRoot not found');
+              }
+            }, 300);
           } else {
             Logger.warn('EXACT edit address icon not found for residential venue');
           }
@@ -1992,7 +2012,9 @@ https: (function () {
   console.log(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
-2025.08.27.02
+  2025.08.28.01
+  - Now when adding or selecting the RPP, it will auto open the address field and will select the house number field automatically
+  2025.08.27.02
   - Now when adding or selecting the RPP, it will auto open the address field.
   2025.08.27.01
   - Fixed major memory leaks causing WME slowdowns after prolonged panning:
