@@ -1246,7 +1246,7 @@ https: (function () {
               } else {
                 Logger.warn('wz-text-input element or its shadowRoot not found');
               }
-            }, 300);
+            }, 500);
           } else {
             Logger.warn('EXACT edit address icon not found for residential venue');
           }
