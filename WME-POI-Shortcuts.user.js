@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.08.28.1
+// @version         2025.09.05.1
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -20,7 +20,7 @@
 https: (function () {
   ('use strict');
 
-  const updateMessage = '<br>Now when adding or selecting the RPP, it will auto open the address field and will select the house number field automatically</br>';
+  const updateMessage = '<br>Minor bug fix for NOC button</br>';
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
   const downloadUrl = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/code/wme-poi-shortcuts.user.js';
@@ -1305,15 +1305,6 @@ https: (function () {
               });
             }, 200);
           }
-          // Nepal-specific logic for Gas Station
-          const topCountry = wmeSDK.DataModel.Countries.getTopCountry();
-          if (topCountry && (topCountry.name === 'Nepal' || topCountry.code === 'NP') && cat === 'GAS_STATION') {
-            wmeSDK.DataModel.Venues.updateVenue({
-              venueId: newVenue.toString(),
-              name: 'NOC',
-              brand: 'Nepal Oil Corporation',
-            });
-          }
         })
         .catch((err) => {
           if (err && err.name === 'InvalidStateError') {
@@ -2012,6 +2003,8 @@ https: (function () {
   console.log(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
+  2025.09.05.01
+  - Minor bug fixes for NOC.
   2025.08.28.01
   - Now when adding or selecting the RPP, it will auto open the address field and will select the house number field automatically
   2025.08.27.02
