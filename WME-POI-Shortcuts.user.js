@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.09.05.1
+// @version         2025.09.22.1
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -20,7 +20,12 @@
 https: (function () {
   ('use strict');
 
-  const updateMessage = '<br>Minor bug fix for NOC button</br>';
+  const updateMessage = `<br><b>Enhanced NOC Button for Nepal Gas Stations:</b><br>
+  • <b>Case 1:</b> Empty gas station → Sets "NOC" as primary name<br>
+  • <b>Case 2:</b> "NOC" primary with aliases → Swaps primary with first alias<br>
+  • <b>Case 3:</b> Non-NOC primary → Adds "NOC" as alias<br>
+  • Fixed InvalidStateError when brand already exists<br>
+  • Improved error handling and logging</br>`;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
   const downloadUrl = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/code/wme-poi-shortcuts.user.js';
@@ -34,6 +39,7 @@ https: (function () {
         {
           primaryName: 'NOC',
           brand: 'Nepal Oil Corporation',
+          aliases: ['NOC'],
           website: 'noc.org.np',
         },
       ],
@@ -1751,6 +1757,166 @@ https: (function () {
     tryInjectSwapButton();
   }
 
+  /**
+   * Handles NOC button click with specific business logic for Nepal gas stations
+   *
+   * This function implements intelligent NOC name management with three distinct cases:
+   *
+   * CASE 1: Empty Gas Station
+   * - Condition: No primary name AND no aliases
+   * - Action: Sets "NOC" as primary name
+   * - Example: Empty venue → Primary: "NOC", Aliases: []
+   *
+   * CASE 2: NOC Primary with Aliases (Smart Swap)
+   * - Condition: Primary name is "NOC" AND has at least one alias
+   * - Action: Swaps primary name with first alias, moves "NOC" to aliases
+   * - Example: Primary: "NOC", Aliases: ["Shell", "Pump"] → Primary: "Shell", Aliases: ["NOC", "Pump"]
+   *
+   * CASE 3: Non-NOC Primary (Add as Alias)
+   * - Condition: Primary name is NOT "NOC" AND "NOC" not in aliases
+   * - Action: Adds "NOC" as an additional alias
+   * - Example: Primary: "Shell", Aliases: ["Pump"] → Primary: "Shell", Aliases: ["Pump", "NOC"]
+   *
+   * Additional Features:
+   * - Conditionally sets brand to "Nepal Oil Corporation" only if different/empty
+   * - Conditionally sets website to "noc.org.np" only if different/empty
+   * - Applies lock rank with proper delays
+   * - Comprehensive error handling to prevent InvalidStateError
+   *
+   * @param {Object} wmeSDK - The WME SDK instance
+   * @param {string} venueId - The venue ID
+   * @param {Object} venue - The venue object
+   * @param {number} lockRank - The lock rank to apply
+   */
+  function handleNOCButtonClick(wmeSDK, venueId, venue, lockRank) {
+    const currentName = venue.name ? venue.name.trim() : '';
+    const currentAliases = Array.isArray(venue.aliases) ? venue.aliases.slice() : [];
+
+    // Helper function to build update object with conditional brand/url setting
+    function buildUpdateObject(baseObj) {
+      const updateObj = { ...baseObj };
+
+      // Only set brand if it's empty or different from target brand
+      if (!venue.brand || venue.brand !== 'Nepal Oil Corporation') {
+        updateObj.brand = 'Nepal Oil Corporation';
+      }
+
+      // Only set URL if it's empty or different from target URL
+      if (!venue.url || venue.url !== 'noc.org.np') {
+        updateObj.url = 'noc.org.np';
+      }
+
+      return updateObj;
+    }
+
+    // Case 1: Gas station has no names - add "NOC" as primary name
+    if (!currentName && currentAliases.length === 0) {
+      const updateObj = buildUpdateObject({
+        venueId: venueId,
+        name: 'NOC',
+        aliases: [],
+      });
+
+      try {
+        wmeSDK.DataModel.Venues.updateVenue(updateObj);
+        Logger.info('NOC: Added NOC as primary name to empty gas station');
+      } catch (err) {
+        Logger.error('NOC: Error updating venue (Case 1):', err);
+        return;
+      }
+
+      // Apply lock rank with delay
+      if (lockRank !== undefined && lockRank !== null) {
+        setTimeout(() => {
+          try {
+            wmeSDK.DataModel.Venues.updateVenue({ venueId: venueId, lockRank: lockRank });
+            Logger.info('[NOC Debug] lockRank updated successfully:', lockRank);
+          } catch (err) {
+            Logger.warn('[NOC Debug] lockRank update failed:', err);
+          }
+        }, RETRY_INJECTION_DELAY * 3);
+      }
+      return;
+    }
+
+    // Case 2: Primary name is "NOC" and has aliases - swap primary with first alias
+    if (currentName === 'NOC' && currentAliases.length > 0) {
+      const newPrimaryName = currentAliases[0];
+      const newAliases = ['NOC', ...currentAliases.slice(1)];
+
+      const updateObj = buildUpdateObject({
+        venueId: venueId,
+        name: newPrimaryName,
+        aliases: newAliases,
+      });
+
+      try {
+        wmeSDK.DataModel.Venues.updateVenue(updateObj);
+        Logger.info(`NOC: Swapped NOC with ${newPrimaryName}, NOC is now alias`);
+      } catch (err) {
+        Logger.error('NOC: Error updating venue (Case 2):', err);
+        return;
+      }
+
+      // Apply lock rank with delay
+      if (lockRank !== undefined && lockRank !== null) {
+        setTimeout(() => {
+          try {
+            wmeSDK.DataModel.Venues.updateVenue({ venueId: venueId, lockRank: lockRank });
+            Logger.info('[NOC Debug] lockRank updated successfully:', lockRank);
+          } catch (err) {
+            Logger.warn('[NOC Debug] lockRank update failed:', err);
+          }
+        }, RETRY_INJECTION_DELAY * 3);
+      }
+      return;
+    }
+
+    // Case 3: Primary name is not "NOC" and no "NOC" alias exists - add "NOC" as alias
+    if (currentName !== 'NOC' && !currentAliases.includes('NOC')) {
+      const newAliases = [...currentAliases, 'NOC'];
+
+      const updateObj = buildUpdateObject({
+        venueId: venueId,
+        name: currentName,
+        aliases: newAliases,
+      });
+
+      try {
+        wmeSDK.DataModel.Venues.updateVenue(updateObj);
+        Logger.info(`NOC: Added NOC as alias to gas station with primary name: ${currentName}`);
+      } catch (err) {
+        Logger.error('NOC: Error updating venue (Case 3):', err);
+        return;
+      }
+
+      // Apply lock rank with delay
+      if (lockRank !== undefined && lockRank !== null) {
+        setTimeout(() => {
+          try {
+            wmeSDK.DataModel.Venues.updateVenue({ venueId: venueId, lockRank: lockRank });
+            Logger.info('[NOC Debug] lockRank updated successfully:', lockRank);
+          } catch (err) {
+            Logger.warn('[NOC Debug] lockRank update failed:', err);
+          }
+        }, RETRY_INJECTION_DELAY * 3);
+      }
+      return;
+    }
+
+    // Edge case: Primary name is not "NOC" but "NOC" already exists as alias
+    if (currentName !== 'NOC' && currentAliases.includes('NOC')) {
+      Logger.info('NOC: NOC already exists as alias, no changes made');
+      return;
+    }
+
+    // Edge case: Primary name is "NOC" but no aliases
+    if (currentName === 'NOC' && currentAliases.length === 0) {
+      Logger.info('NOC: Gas station already has NOC as primary name with no aliases');
+      return;
+    }
+  }
+
   function injectButtonStation(wmeSDK) {
     // Only run if a venue is selected
     const selection = wmeSDK.Editing.getSelection();
@@ -1834,12 +2000,6 @@ https: (function () {
         const website = $(this).attr('data-website');
         const categoryKey = $(this).attr('data-category');
 
-        // Find the selected brand object to get its predefined aliases
-        let selectedBrandObj = null;
-        if (countryBrands) {
-          selectedBrandObj = countryBrands.find((brandObj) => brandObj.primaryName === primaryName);
-        }
-
         // Read lockRank for the station category from localStorage config
         let lockRank = null;
         let config = {};
@@ -1858,6 +2018,18 @@ https: (function () {
         }
         if (!foundConfig || isNaN(lockRank)) {
           lockRank = venue.lockRank && !isNaN(venue.lockRank) ? venue.lockRank : 1;
+        }
+
+        // Special handling for NOC button in Nepal
+        if (primaryName === 'NOC' && isNepal && isGasStation) {
+          handleNOCButtonClick(wmeSDK, venueId, venue, lockRank);
+          return; // Exit early for NOC
+        }
+
+        // Find the selected brand object to get its predefined aliases
+        let selectedBrandObj = null;
+        if (countryBrands) {
+          selectedBrandObj = countryBrands.find((brandObj) => brandObj.primaryName === primaryName);
         }
 
         // Build aliases array: start with existing venue aliases, add current name if different, then add brand aliases
@@ -1901,7 +2073,7 @@ https: (function () {
           setTimeout(() => {
             const venueAfter = wmeSDK.DataModel.Venues.getById({ venueId });
             console.log('[Brand Debug] Venue after update:', venueAfter);
-          }, 500);
+          }, UI_ELEMENT_WAIT_DELAY * 10);
           // Now update lockRank in a separate call
           if (lockRank !== undefined && lockRank !== null) {
             setTimeout(() => {
@@ -1911,7 +2083,7 @@ https: (function () {
               } catch (err2) {
                 console.warn('[Brand Debug] lockRank update failed:', err2);
               }
-            }, 300);
+            }, RETRY_INJECTION_DELAY * 3);
           }
         } catch (err) {
           console.warn('[Brand Debug] Update failed:', err);
@@ -2003,6 +2175,13 @@ https: (function () {
   console.log(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
+  2025.09.22.01
+  -Enhanced NOC Button for Nepal Gas Stations:</b><br>
+    * Case 1: Empty gas station → Sets "NOC" as primary name<br>
+    * Case 2: "NOC" primary with aliases → Swaps primary with first alias<br>
+    * Case 3: Non-NOC primary → Adds "NOC" as alias<br>
+  - Fixed InvalidStateError when brand already exists<br>
+  - Improved error handling and logging</br>
   2025.09.05.01
   - Minor bug fixes for NOC.
   2025.08.28.01
