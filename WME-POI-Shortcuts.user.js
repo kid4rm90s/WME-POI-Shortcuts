@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.09.22.1
+// @version         2025.09.24.2
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -22,9 +22,9 @@ https: (function () {
 
   const updateMessage = `<br><b>Enhanced NOC Button for Nepal Gas Stations:</b><br>
   • <b>Case 1:</b> Empty gas station → Sets "NOC" as primary name<br>
-  • <b>Case 2:</b> "NOC" primary with aliases → Swaps primary with first alias<br>
+  • <b>Case 2:</b> "NOC" primary with aliases → Prioritizes English aliases over Nepali<br>
   • <b>Case 3:</b> Non-NOC primary → Adds "NOC" as alias<br>
-  • Fixed InvalidStateError when brand already exists<br>
+  • Uses regex to detect English vs Nepali text for smart name swapping<br>
   • Improved error handling and logging</br>`;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
@@ -1172,9 +1172,9 @@ https: (function () {
       const buttonClicked = clickConvertToResidentialButton();
 
       if (buttonClicked) {
-        WazeWrap.Alerts.success('POI Shortcut', `Successfully converted venue "${venueName}" to residential.`, false, false, 4000);
+        WazeWrap.Alerts.info('POI Shortcut', `Successfully converted venue "${venueName}" to residential.`, false, false, 1000);
       } else {
-        WazeWrap.Alerts.warning('POI Shortcut', `House number set to "${venueName}". Please manually click "Convert to residential" button.`, false, false, 4000);
+        WazeWrap.Alerts.warning('POI Shortcut', `House number set to "${venueName}". Please manually click "Convert to residential" button.`, false, false, 3000);
       }
     }, 500);
   }
@@ -1449,6 +1449,7 @@ https: (function () {
 
   function WMEKSSaveKeyboardShortcuts(scriptName) {
     Logger.info(`Saving keyboard shortcuts for ${scriptName}`);
+    WazeWrap.Alerts.success('POI Shortcut', `Saving keyboard shortcuts for ${scriptName}`, false, false, 3000);
     const shortcuts = [];
     for (var actionName in W.accelerators.Actions) {
       var shortcutString = '';
@@ -1540,6 +1541,7 @@ https: (function () {
       });
 
       Logger.info(`Swapped names: "${currentPrimaryName}" ↔ "${targetAlias}" (alias index: ${aliasIndex})`);
+      WazeWrap.Alerts.info('POI Shortcut', `Swapped names: "<b>${currentPrimaryName}</b>" ↔ "<b>${targetAlias}</b>"`, false, false, 3000);
 
       // Re-inject swap buttons so icon appears immediately
       setTimeout(function () {
@@ -1705,28 +1707,6 @@ https: (function () {
         foundAliases = true;
       });
 
-      // Fallback method if no aliases found
-      // if (!foundAliases) {
-      //   const $nameField = $('input[placeholder*="name" i], input[name*="name" i], .venue-name input, .place-name input');
-      //   if ($nameField.length > 0) {
-      //     const $targetContainer = $nameField.closest('.form-group, .field-group, .control-group').first();
-      //     if ($targetContainer.length > 0 && $('.swap-names-btn').length === 0) {
-      //       const hasSwappableNames = venue.name && venue.aliases && venue.aliases.length > 0;
-      //       if (hasSwappableNames) {
-      //         const buttonHtml = `
-      //           <div class='form-group swap-names-container' style='margin: 5px 0; display: inline-block;'>
-      //             <wz-button color="blue" size="sm" class="swap-names-btn" title="Swap primary name with first alias" data-alias-index="0">
-      //               <i class="w-icon w-icon-arrow-up"></i> Swap Names
-      //             </wz-button>
-      //           </div>
-      //         `;
-      //         $targetContainer.after(buttonHtml);
-      //         foundAliases = true;
-      //       }
-      //     }
-      //   }
-      // }
-
       // Retry if no aliases found yet
       if (!foundAliases) {
         setTimeout(() => tryInjectSwapButton(attemptCount + 1), RETRY_INJECTION_DELAY);
@@ -1769,8 +1749,9 @@ https: (function () {
    *
    * CASE 2: NOC Primary with Aliases (Smart Swap)
    * - Condition: Primary name is "NOC" AND has at least one alias
-   * - Action: Swaps primary name with first alias, moves "NOC" to aliases
-   * - Example: Primary: "NOC", Aliases: ["Shell", "Pump"] → Primary: "Shell", Aliases: ["NOC", "Pump"]
+   * - Action: Swaps primary name with first English alias (uses regex), moves "NOC" to aliases
+   * - Prioritizes English over Nepali names when selecting which alias to promote
+   * - Example: Primary: "NOC", Aliases: ["नेपाल तेल", "Shell"] → Primary: "Shell", Aliases: ["NOC", "नेपाल तेल"]
    *
    * CASE 3: Non-NOC Primary (Add as Alias)
    * - Condition: Primary name is NOT "NOC" AND "NOC" not in aliases
@@ -1780,7 +1761,8 @@ https: (function () {
    * Additional Features:
    * - Conditionally sets brand to "Nepal Oil Corporation" only if different/empty
    * - Conditionally sets website to "noc.org.np" only if different/empty
-   * - Applies lock rank with proper delays
+   * - Always applies lock rank if different from current (even when no name changes needed)
+   * - Uses proper delays to prevent WME update conflicts
    * - Comprehensive error handling to prevent InvalidStateError
    *
    * @param {Object} wmeSDK - The WME SDK instance
@@ -1820,29 +1802,49 @@ https: (function () {
       try {
         wmeSDK.DataModel.Venues.updateVenue(updateObj);
         Logger.info('NOC: Added NOC as primary name to empty gas station');
+
+        // Apply lock rank with delay and combined alert
+        if (lockRank !== undefined && lockRank !== null && lockRank !== venue.lockRank) {
+          setTimeout(() => {
+            try {
+              wmeSDK.DataModel.Venues.updateVenue({ venueId: venueId, lockRank: lockRank });
+              Logger.info('[NOC Debug] lockRank updated successfully:', lockRank);
+              WazeWrap.Alerts.info('NOC Update', `<b>Case 1:</b> Empty gas station updated<br>Primary: <b>NOC</b><br>Brand: <b>Nepal Oil Corporation</b><br>Lock Rank: <b>${venue.lockRank + 1}</b> → <b>${lockRank + 1}</b>`, false, false, 3000);
+            } catch (err) {
+              Logger.warn('[NOC Debug] lockRank update failed:', err);
+              WazeWrap.Alerts.warning('NOC Update', `<b>Case 1:</b> Empty gas station updated<br>Primary: <b>NOC</b><br>Brand: <b>Nepal Oil Corporation</b><br>⚠️ Lock rank update failed`, false, false, 3000);
+            }
+          }, RETRY_INJECTION_DELAY * 3);
+        } else {
+          const lockMessage = lockRank !== undefined && lockRank !== null ? `<br>Lock Rank: <b>${lockRank + 1}</b> (unchanged)` : '';
+          WazeWrap.Alerts.info('NOC Update', `<b>Case 1:</b> Empty gas station updated<br>Primary: <b>NOC</b><br>Brand: <b>Nepal Oil Corporation</b>${lockMessage}`, false, false, 3000);
+        }
       } catch (err) {
         Logger.error('NOC: Error updating venue (Case 1):', err);
+        WazeWrap.Alerts.error('NOC Error', 'Failed to update empty gas station', false, false, 3000);
         return;
-      }
-
-      // Apply lock rank with delay
-      if (lockRank !== undefined && lockRank !== null) {
-        setTimeout(() => {
-          try {
-            wmeSDK.DataModel.Venues.updateVenue({ venueId: venueId, lockRank: lockRank });
-            Logger.info('[NOC Debug] lockRank updated successfully:', lockRank);
-          } catch (err) {
-            Logger.warn('[NOC Debug] lockRank update failed:', err);
-          }
-        }, RETRY_INJECTION_DELAY * 3);
       }
       return;
     }
 
-    // Case 2: Primary name is "NOC" and has aliases - swap primary with first alias
+    // Case 2: Primary name is "NOC" and has aliases - swap primary with English alias preferentially
     if (currentName === 'NOC' && currentAliases.length > 0) {
-      const newPrimaryName = currentAliases[0];
-      const newAliases = ['NOC', ...currentAliases.slice(1)];
+      // Helper function to detect if text is likely English (uses Latin characters)
+      const isEnglish = (text) => /^[a-zA-Z0-9\s\-'&.()]+$/.test(text.trim());
+
+      // Find the first English alias, fallback to first alias if none found
+      let selectedAliasIndex = 0;
+      for (let i = 0; i < currentAliases.length; i++) {
+        if (isEnglish(currentAliases[i])) {
+          selectedAliasIndex = i;
+          break;
+        }
+      }
+
+      const newPrimaryName = currentAliases[selectedAliasIndex];
+      // Create new aliases array: NOC first, then remaining aliases (excluding the selected one)
+      const remainingAliases = currentAliases.filter((_, index) => index !== selectedAliasIndex);
+      const newAliases = ['NOC', ...remainingAliases];
 
       const updateObj = buildUpdateObject({
         venueId: venueId,
@@ -1853,21 +1855,27 @@ https: (function () {
       try {
         wmeSDK.DataModel.Venues.updateVenue(updateObj);
         Logger.info(`NOC: Swapped NOC with ${newPrimaryName}, NOC is now alias`);
+
+        // Apply lock rank with delay and combined alert
+        if (lockRank !== undefined && lockRank !== null && lockRank !== venue.lockRank) {
+          setTimeout(() => {
+            try {
+              wmeSDK.DataModel.Venues.updateVenue({ venueId: venueId, lockRank: lockRank });
+              Logger.info('[NOC Debug] lockRank updated successfully:', lockRank);
+              WazeWrap.Alerts.info('NOC Update', `<b>Case 2:</b> Smart swap completed<br>Primary: <b>${newPrimaryName}</b><br>NOC moved to aliases<br>Lock Rank: <b>${venue.lockRank + 1}</b> → <b>${lockRank + 1}</b>`, false, false, 3000);
+            } catch (err) {
+              Logger.warn('[NOC Debug] lockRank update failed:', err);
+              WazeWrap.Alerts.warning('NOC Update', `<b>Case 2:</b> Smart swap completed<br>Primary: <b>${newPrimaryName}</b><br>NOC moved to aliases<br>⚠️ Lock rank update failed`, false, false, 3000);
+            }
+          }, RETRY_INJECTION_DELAY * 3);
+        } else {
+          const lockMessage = lockRank !== undefined && lockRank !== null ? `<br>Lock Rank: <b>${lockRank + 1}</b> (unchanged)` : '';
+          WazeWrap.Alerts.info('NOC Update', `<b>Case 2:</b> Smart swap completed<br>Primary: <b>${newPrimaryName}</b><br>NOC moved to aliases${lockMessage}`, false, false, 3000);
+        }
       } catch (err) {
         Logger.error('NOC: Error updating venue (Case 2):', err);
+        WazeWrap.Alerts.error('NOC Error', 'Failed to swap NOC with alias name', false, false, 3000);
         return;
-      }
-
-      // Apply lock rank with delay
-      if (lockRank !== undefined && lockRank !== null) {
-        setTimeout(() => {
-          try {
-            wmeSDK.DataModel.Venues.updateVenue({ venueId: venueId, lockRank: lockRank });
-            Logger.info('[NOC Debug] lockRank updated successfully:', lockRank);
-          } catch (err) {
-            Logger.warn('[NOC Debug] lockRank update failed:', err);
-          }
-        }, RETRY_INJECTION_DELAY * 3);
       }
       return;
     }
@@ -1885,34 +1893,74 @@ https: (function () {
       try {
         wmeSDK.DataModel.Venues.updateVenue(updateObj);
         Logger.info(`NOC: Added NOC as alias to gas station with primary name: ${currentName}`);
+
+        // Apply lock rank with delay and combined alert
+        if (lockRank !== undefined && lockRank !== null && lockRank !== venue.lockRank) {
+          setTimeout(() => {
+            try {
+              wmeSDK.DataModel.Venues.updateVenue({ venueId: venueId, lockRank: lockRank });
+              Logger.info('[NOC Debug] lockRank updated successfully:', lockRank);
+              WazeWrap.Alerts.info('NOC Update', `<b>Case 3:</b> NOC added as alias<br>Primary: <b>${currentName}</b><br>NOC added to aliases<br>Lock Rank: <b>${venue.lockRank + 1}</b> → <b>${lockRank + 1}</b>`, false, false, 3000);
+            } catch (err) {
+              Logger.warn('[NOC Debug] lockRank update failed:', err);
+              WazeWrap.Alerts.warning('NOC Update', `<b>Case 3:</b> NOC added as alias<br>Primary: <b>${currentName}</b><br>NOC added to aliases<br>⚠️ Lock rank update failed`, false, false, 3000);
+            }
+          }, RETRY_INJECTION_DELAY * 3);
+        } else {
+          const lockMessage = lockRank !== undefined && lockRank !== null ? `<br>Lock Rank: <b>${lockRank + 1}</b> (unchanged)` : '';
+          WazeWrap.Alerts.info('NOC Update', `<b>Case 3:</b> NOC added as alias<br>Primary: <b>${currentName}</b><br>NOC added to aliases${lockMessage}`, false, false, 3000);
+        }
       } catch (err) {
         Logger.error('NOC: Error updating venue (Case 3):', err);
+        WazeWrap.Alerts.error('NOC Error', 'Failed to add NOC as alias', false, false, 3000);
         return;
-      }
-
-      // Apply lock rank with delay
-      if (lockRank !== undefined && lockRank !== null) {
-        setTimeout(() => {
-          try {
-            wmeSDK.DataModel.Venues.updateVenue({ venueId: venueId, lockRank: lockRank });
-            Logger.info('[NOC Debug] lockRank updated successfully:', lockRank);
-          } catch (err) {
-            Logger.warn('[NOC Debug] lockRank update failed:', err);
-          }
-        }, RETRY_INJECTION_DELAY * 3);
       }
       return;
     }
 
     // Edge case: Primary name is not "NOC" but "NOC" already exists as alias
     if (currentName !== 'NOC' && currentAliases.includes('NOC')) {
-      Logger.info('NOC: NOC already exists as alias, no changes made');
+      Logger.info('NOC: NOC already exists as alias, checking lock rank');
+
+      // Still apply lock rank if it's different from current
+      if (lockRank !== undefined && lockRank !== null && lockRank !== venue.lockRank) {
+        setTimeout(() => {
+          try {
+            wmeSDK.DataModel.Venues.updateVenue({ venueId: venueId, lockRank: lockRank });
+            Logger.info(`[NOC Debug] lockRank updated successfully: ${lockRank} (was ${venue.lockRank})`);
+            WazeWrap.Alerts.info('NOC Update', `<b>Edge Case:</b> NOC already in aliases<br>Lock rank updated: <b>${venue.lockRank + 1}</b> → <b>${lockRank + 1}</b>`, false, false, 3000);
+          } catch (err) {
+            Logger.warn('[NOC Debug] lockRank update failed:', err);
+            WazeWrap.Alerts.warning('NOC Update', `<b>Edge Case:</b> NOC already in aliases<br>⚠️ Lock rank update failed`, false, false, 3000);
+          }
+        }, RETRY_INJECTION_DELAY * 3);
+      } else {
+        Logger.info('NOC: No changes needed - NOC exists and lock rank unchanged');
+        WazeWrap.Alerts.info('NOC Update', '<b>No Changes:</b> NOC already in aliases<br>Lock rank already correct', false, false, 2500);
+      }
       return;
     }
 
     // Edge case: Primary name is "NOC" but no aliases
     if (currentName === 'NOC' && currentAliases.length === 0) {
-      Logger.info('NOC: Gas station already has NOC as primary name with no aliases');
+      Logger.info('NOC: Gas station already has NOC as primary name with no aliases, checking lock rank');
+
+      // Still apply lock rank if it's different from current
+      if (lockRank !== undefined && lockRank !== null && lockRank !== venue.lockRank) {
+        setTimeout(() => {
+          try {
+            wmeSDK.DataModel.Venues.updateVenue({ venueId: venueId, lockRank: lockRank });
+            Logger.info(`[NOC Debug] lockRank updated successfully: ${lockRank} (was ${venue.lockRank})`);
+            WazeWrap.Alerts.info('NOC Update', `<b>Edge Case:</b> NOC already primary<br>Lock rank updated: <b>${venue.lockRank + 1}</b> → <b>${lockRank + 1}</b>`, false, false, 3000);
+          } catch (err) {
+            Logger.warn('[NOC Debug] lockRank update failed:', err);
+            WazeWrap.Alerts.warning('NOC Update', `<b>Edge Case:</b> NOC already primary<br>⚠️ Lock rank update failed`, false, false, 3000);
+          }
+        }, RETRY_INJECTION_DELAY * 3);
+      } else {
+        Logger.info('NOC: No changes needed - NOC is primary and lock rank unchanged');
+        WazeWrap.Alerts.info('NOC Update', '<b>No Changes:</b> NOC already primary<br>Lock rank already correct', false, false, 2500);
+      }
       return;
     }
   }
@@ -2175,6 +2223,15 @@ https: (function () {
   console.log(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
+  2025.09.24.02
+ - Enhanced NOC Button for Nepal Gas Stations with Wazewrap alert:</b><br>
+    • <b>Case 1:</b> Empty gas station → Sets "NOC" as primary name<br>
+    • <b>Case 2:</b> "NOC" primary with aliases → Prioritizes English aliases over Nepali<br>
+    • <b>Case 3:</b> Non-NOC primary → Adds "NOC" as alias<br>
+    • Uses regex to detect English vs Nepali text for smart name swapping<br>
+    • Improved error handling and logging
+  2025.09.24.01
+  - Fixed     * Case 2: "NOC" primary with aliases → Prioritizes English aliases over Nepali<br>
   2025.09.22.01
   -Enhanced NOC Button for Nepal Gas Stations:</b><br>
     * Case 1: Empty gas station → Sets "NOC" as primary name<br>
