@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.09.24.2
+// @version         2025.11.15.01
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -20,12 +20,7 @@
 https: (function () {
   ('use strict');
 
-  const updateMessage = `<br><b>Enhanced NOC Button for Nepal Gas Stations:</b><br>
-  • <b>Case 1:</b> Empty gas station → Sets "NOC" as primary name<br>
-  • <b>Case 2:</b> "NOC" primary with aliases → Prioritizes English aliases over Nepali<br>
-  • <b>Case 3:</b> Non-NOC primary → Adds "NOC" as alias<br>
-  • Uses regex to detect English vs Nepali text for smart name swapping<br>
-  • Improved error handling and logging</br>`;
+  const updateMessage = `<br>minor bug fixes</br>`;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
   const downloadUrl = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/code/wme-poi-shortcuts.user.js';
@@ -191,6 +186,10 @@ https: (function () {
           brand: 'ElectriVa Nepal',
           aliases: ['EV Charging Station'],
           website: 'electrivanepal.com/locations',
+          openingHours: [
+            { days: [0, 1, 2, 3, 4, 5, 6], fromHour: '00:00', toHour: '00:00' }
+          ], // 24 hours, 7 days a week (days: 0=Sun, 1=Mon, ..., 6=Sat)
+          is24_7: true, // Flag for display purposes
         },
         {
           primaryName: 'Yatri',
@@ -206,7 +205,7 @@ https: (function () {
         },
         {
           primaryName: 'MAW Vriddhi',
-          brand: 'MAW Vriddhi',
+          brand: 'Maw Vriddhi',
           aliases: ['EV Charging Station'],
           website: 'mawevcharging.com/',
         },
@@ -1965,6 +1964,235 @@ https: (function () {
     }
   }
 
+  /**
+   * Handles charging station brand/network button clicks
+   * Updates primary name, brand, website, aliases, and lock rank
+   * 
+   * @param {Object} wmeSDK - The WME SDK instance
+   * @param {string} venueId - The venue ID
+   * @param {Object} venue - The venue object
+   * @param {string} primaryName - The primary network/brand name
+   * @param {string} brand - The brand value
+   * @param {string} website - The website URL
+   * @param {number} lockRank - The lock rank to apply
+   * @param {Array} countryBrands - Array of brand objects for the country
+   */
+  function handleChargingStationButtonClick(wmeSDK, venueId, venue, primaryName, brand, website, lockRank, countryBrands) {
+    try {
+      // Find the selected brand object to get its predefined aliases
+      const selectedBrandObj = countryBrands ? countryBrands.find((brandObj) => brandObj.primaryName === primaryName) : null;
+
+      // Build aliases array following SDK best practices
+      let aliases = Array.isArray(venue.aliases) ? venue.aliases.slice() : [];
+
+      // Add current venue name to aliases if it's different from the selected primaryName
+      if (venue.name && venue.name !== primaryName && !aliases.includes(venue.name)) {
+        aliases.push(venue.name);
+      }
+
+      // Add predefined aliases from the brand data
+      if (selectedBrandObj && Array.isArray(selectedBrandObj.aliases)) {
+        selectedBrandObj.aliases.forEach((alias) => {
+          if (alias && alias.trim() !== '' && !aliases.includes(alias)) {
+            aliases.push(alias);
+          }
+        });
+      }
+
+      // Build update object with conditional property setting
+      const updateObj = {
+        venueId: venueId,
+        name: primaryName,
+        aliases: aliases,
+      };
+
+      // Only set brand if it's different from current
+      // Commented out for future use - brand field not currently needed for charging stations
+      // if (!venue.brand || venue.brand !== brand) {
+      //   updateObj.brand = brand;
+      // }
+
+      // Only set URL if it's different from current
+      if (website && (!venue.url || venue.url !== website)) {
+        updateObj.url = website;
+      }
+
+      // Set opening hours if specified in brand data (e.g., ElectriVa is 24/7)
+      if (selectedBrandObj && selectedBrandObj.openingHours) {
+        updateObj.openingHours = selectedBrandObj.openingHours;
+      }
+
+
+
+      Logger.info('[Charging Station] Updating with:', updateObj);
+
+      // Apply venue updates using SDK updateVenue method
+      wmeSDK.DataModel.Venues.updateVenue(updateObj);
+      Logger.info(`[Charging Station] Updated to ${primaryName}`);
+
+
+
+      // Apply lock rank with delay to prevent conflicts
+      if (lockRank !== undefined && lockRank !== null && lockRank !== venue.lockRank) {
+        setTimeout(() => {
+          try {
+            wmeSDK.DataModel.Venues.updateVenue({ venueId: venueId, lockRank: lockRank });
+            Logger.info(`[Charging Station] Lock rank updated to ${lockRank}`);
+            // Build additional info message for opening hours and payment methods
+            let additionalInfo = '';
+            if (selectedBrandObj && selectedBrandObj.is24_7) {
+              additionalInfo += '<br><b>Hours:</b> Open 24/7';
+            }
+
+            
+            WazeWrap.Alerts.success(
+              'Charging Station Updated',
+              `<b>Network:</b> ${primaryName}<br><b>Brand:</b> ${brand}<br><b>Aliases:</b> ${aliases.length > 0 ? aliases.join(', ') : 'None'}<br><b>Lock Rank:</b> ${venue.lockRank + 1} → ${lockRank + 1}${additionalInfo}`,
+              false,
+              false,
+              4000
+            );
+          } catch (err) {
+            Logger.warn('[Charging Station] Lock rank update failed:', err);
+            WazeWrap.Alerts.warning(
+              'Charging Station Updated',
+              `<b>Network:</b> ${primaryName}<br><b>Brand:</b> ${brand}<br><b>Aliases:</b> ${aliases.length > 0 ? aliases.join(', ') : 'None'}<br>⚠️ Lock rank update failed`,
+              false,
+              false,
+              3000
+            );
+          }
+        }, RETRY_INJECTION_DELAY * 3);
+      } else {
+        const lockMessage = lockRank !== undefined && lockRank !== null ? `<br><b>Lock Rank:</b> ${lockRank + 1} (unchanged)` : '';
+        
+        // Build additional info message for opening hours and payment methods
+        let additionalInfo = '';
+        if (selectedBrandObj && selectedBrandObj.is24_7) {
+          additionalInfo += '<br><b>Hours:</b> Open 24/7';
+        }
+        if (selectedBrandObj && selectedBrandObj.paymentMethods && selectedBrandObj.paymentMethods.length > 0) {
+          const paymentDisplay = selectedBrandObj.paymentMethods.map(pm => {
+            if (pm === 'app') return 'App';
+            if (pm === 'online_payment') return 'Online Payment';
+            if (pm === 'other') return 'Other';
+            return pm;
+          }).join(', ');
+          additionalInfo += `<br><b>Payment:</b> ${paymentDisplay}`;
+        }
+        
+        WazeWrap.Alerts.success(
+          'Charging Station Updated',
+          `<b>Network:</b> ${primaryName}<br><b>Brand:</b> ${brand}<br><b>Aliases:</b> ${aliases.length > 0 ? aliases.join(', ') : 'None'}${lockMessage}${additionalInfo}`,
+          false,
+          false,
+          4000
+        );
+      }
+    } catch (error) {
+      Logger.error('[Charging Station] Error updating:', error);
+      WazeWrap.Alerts.error('Charging Station Error', `Failed to update to ${primaryName}`, false, false, 3000);
+    }
+  }
+
+  /**
+   * Handles gas station brand button clicks (non-NOC)
+   * Updates primary name, brand, website, aliases, and lock rank
+   * 
+   * @param {Object} wmeSDK - The WME SDK instance
+   * @param {string} venueId - The venue ID
+   * @param {Object} venue - The venue object
+   * @param {string} primaryName - The primary brand name
+   * @param {string} brand - The brand value
+   * @param {string} website - The website URL
+   * @param {number} lockRank - The lock rank to apply
+   * @param {Array} countryBrands - Array of brand objects for the country
+   */
+  function handleGasStationButtonClick(wmeSDK, venueId, venue, primaryName, brand, website, lockRank, countryBrands) {
+    try {
+      // Find the selected brand object to get its predefined aliases
+      const selectedBrandObj = countryBrands ? countryBrands.find((brandObj) => brandObj.primaryName === primaryName) : null;
+
+      // Build aliases array following SDK best practices
+      let aliases = Array.isArray(venue.aliases) ? venue.aliases.slice() : [];
+
+      // Add current venue name to aliases if it's different from the selected primaryName
+      if (venue.name && venue.name !== primaryName && !aliases.includes(venue.name)) {
+        aliases.push(venue.name);
+      }
+
+      // Add predefined aliases from the brand data
+      if (selectedBrandObj && Array.isArray(selectedBrandObj.aliases)) {
+        selectedBrandObj.aliases.forEach((alias) => {
+          if (alias && alias.trim() !== '' && !aliases.includes(alias)) {
+            aliases.push(alias);
+          }
+        });
+      }
+
+      // Build update object with conditional property setting
+      const updateObj = {
+        venueId: venueId,
+        name: primaryName,
+        aliases: aliases,
+      };
+
+      // Only set brand if it's different from current
+      if (!venue.brand || venue.brand !== brand) {
+        updateObj.brand = brand;
+      }
+
+      // Only set URL if it's different from current
+      if (website && (!venue.url || venue.url !== website)) {
+        updateObj.url = website;
+      }
+
+      Logger.info('[Gas Station] Updating with:', updateObj);
+
+      // Apply venue updates using SDK updateVenue method
+      wmeSDK.DataModel.Venues.updateVenue(updateObj);
+      Logger.info(`[Gas Station] Updated to ${primaryName}`);
+
+      // Apply lock rank with delay to prevent conflicts
+      if (lockRank !== undefined && lockRank !== null && lockRank !== venue.lockRank) {
+        setTimeout(() => {
+          try {
+            wmeSDK.DataModel.Venues.updateVenue({ venueId: venueId, lockRank: lockRank });
+            Logger.info(`[Gas Station] Lock rank updated to ${lockRank}`);
+            WazeWrap.Alerts.success(
+              'Gas Station Updated',
+              `<b>Brand:</b> ${primaryName}<br><b>Company:</b> ${brand}<br><b>Aliases:</b> ${aliases.length > 0 ? aliases.join(', ') : 'None'}<br><b>Lock Rank:</b> ${venue.lockRank + 1} → ${lockRank + 1}`,
+              false,
+              false,
+              3000
+            );
+          } catch (err) {
+            Logger.warn('[Gas Station] Lock rank update failed:', err);
+            WazeWrap.Alerts.warning(
+              'Gas Station Updated',
+              `<b>Brand:</b> ${primaryName}<br><b>Company:</b> ${brand}<br><b>Aliases:</b> ${aliases.length > 0 ? aliases.join(', ') : 'None'}<br>⚠️ Lock rank update failed`,
+              false,
+              false,
+              3000
+            );
+          }
+        }, RETRY_INJECTION_DELAY * 3);
+      } else {
+        const lockMessage = lockRank !== undefined && lockRank !== null ? `<br><b>Lock Rank:</b> ${lockRank + 1} (unchanged)` : '';
+        WazeWrap.Alerts.success(
+          'Gas Station Updated',
+          `<b>Brand:</b> ${primaryName}<br><b>Company:</b> ${brand}<br><b>Aliases:</b> ${aliases.length > 0 ? aliases.join(', ') : 'None'}${lockMessage}`,
+          false,
+          false,
+          3000
+        );
+      }
+    } catch (error) {
+      Logger.error('[Gas Station] Error updating:', error);
+      WazeWrap.Alerts.error('Gas Station Error', `Failed to update to ${primaryName}`, false, false, 3000);
+    }
+  }
+
   function injectButtonStation(wmeSDK) {
     // Only run if a venue is selected
     const selection = wmeSDK.Editing.getSelection();
@@ -2047,6 +2275,7 @@ https: (function () {
         const brand = $(this).attr('data-brand');
         const website = $(this).attr('data-website');
         const categoryKey = $(this).attr('data-category');
+        const isChargingStationBtn = $(this).hasClass('charging-station-brand-btn');
 
         // Read lockRank for the station category from localStorage config
         let lockRank = null;
@@ -2074,67 +2303,11 @@ https: (function () {
           return; // Exit early for NOC
         }
 
-        // Find the selected brand object to get its predefined aliases
-        let selectedBrandObj = null;
-        if (countryBrands) {
-          selectedBrandObj = countryBrands.find((brandObj) => brandObj.primaryName === primaryName);
-        }
-
-        // Build aliases array: start with existing venue aliases, add current name if different, then add brand aliases
-        let aliases = Array.isArray(venue.aliases) ? venue.aliases.slice() : [];
-
-        // Add current venue name to aliases if it's different from the selected primaryName
-        if (venue.name && venue.name !== primaryName && !aliases.includes(venue.name)) {
-          aliases.push(venue.name);
-        }
-
-        // Add predefined aliases from the brand data
-        if (selectedBrandObj && Array.isArray(selectedBrandObj.aliases)) {
-          selectedBrandObj.aliases.forEach((alias) => {
-            // Only add if it's not empty and not already in the aliases array
-            if (alias && alias.trim() !== '' && !aliases.includes(alias)) {
-              aliases.push(alias);
-            }
-          });
-        }
-
-        // Log venue before update
-        const venueBefore = wmeSDK.DataModel.Venues.getById({ venueId });
-        console.log('[Brand Debug] Venue before update:', venueBefore);
-        console.log('[Brand Debug] Selected brand object:', selectedBrandObj);
-        console.log('[Brand Debug] Final aliases array:', aliases);
-
-        const updateObj = {
-          venueId: venueId,
-          name: primaryName,
-          aliases: aliases,
-          brand: brand,
-        };
-        if (website) {
-          updateObj.url = website;
-        }
-        console.log('[Brand Debug] Attempting updateVenue (no lockRank) with:', updateObj);
-        try {
-          wmeSDK.DataModel.Venues.updateVenue(updateObj);
-          console.log('[Brand Debug] updateVenue (no lockRank) called successfully.');
-          // Log venue after update
-          setTimeout(() => {
-            const venueAfter = wmeSDK.DataModel.Venues.getById({ venueId });
-            console.log('[Brand Debug] Venue after update:', venueAfter);
-          }, UI_ELEMENT_WAIT_DELAY * 10);
-          // Now update lockRank in a separate call
-          if (lockRank !== undefined && lockRank !== null) {
-            setTimeout(() => {
-              try {
-                wmeSDK.DataModel.Venues.updateVenue({ venueId: venueId, lockRank: lockRank });
-                console.log('[Brand Debug] lockRank updated successfully:', lockRank);
-              } catch (err2) {
-                console.warn('[Brand Debug] lockRank update failed:', err2);
-              }
-            }, RETRY_INJECTION_DELAY * 3);
-          }
-        } catch (err) {
-          console.warn('[Brand Debug] Update failed:', err);
+        // Handle charging station or regular gas station brand updates
+        if (isChargingStationBtn) {
+          handleChargingStationButtonClick(wmeSDK, venueId, venue, primaryName, brand, website, lockRank, countryBrands);
+        } else {
+          handleGasStationButtonClick(wmeSDK, venueId, venue, primaryName, brand, website, lockRank, countryBrands);
         }
       });
     }
@@ -2223,6 +2396,10 @@ https: (function () {
   console.log(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
+  2025.11.13.02
+ - minor bug fixes for electriva charging stations
+  2025.11.12.01
+ - Added ElectriVa charging station brand button for Nepal with aliases, 24/7 hours.
   2025.09.24.02
  - Enhanced NOC Button for Nepal Gas Stations with Wazewrap alert:</b><br>
     • <b>Case 1:</b> Empty gas station → Sets "NOC" as primary name<br>
