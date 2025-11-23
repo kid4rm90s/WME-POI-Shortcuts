@@ -1113,7 +1113,7 @@ https: (function () {
     const venueCategories = venue.categories || [];
     const isOther = venueCategories.some((cat) => otherCategories.includes(cat));
 
-    console.log('Venue categories:', venueCategories);
+    Logger.info('Venue categories:', venueCategories);
 
     if (!isOther) {
       WazeWrap.Alerts.warning('POI Shortcut', `This function only works with venues of type OTHER. Actual: ${venueCategories.join(', ')}`, false, false, 3000);
@@ -1529,6 +1529,24 @@ https: (function () {
   function getChargingStationCategoryKey() {
     // Charging station category key is consistent across all locales
     return 'CHARGING_STATION';
+  }
+
+  /**
+   * Convert payment method ID to human-readable label
+   * @param {string} paymentMethodId - The payment method ID (e.g., 'ONLINE_PAYMENT', 'APP')
+   * @returns {string} - Human-readable label (e.g., 'Online payment', 'App')
+   */
+  function getPaymentMethodLabel(paymentMethodId) {
+    switch(paymentMethodId) {
+      case 'APP': return 'App';
+      case 'CREDIT': return 'Credit card';
+      case 'DEBIT': return 'Debit card';
+      case 'MEMBERSHIP_CARD': return 'Membership card';
+      case 'ONLINE_PAYMENT': return 'Online payment';
+      case 'OTHER': return 'Other';
+      case 'PLUG_IN_AUTO_CHARGE': return 'Plug-in autocharge';
+      default: return paymentMethodId;
+    }
   }
 
   /**
@@ -2575,28 +2593,6 @@ https: (function () {
       // Set payment methods from WME dropdown if paymentMethods array is available
       if (selectedBrandObj && selectedBrandObj.paymentMethods && Array.isArray(selectedBrandObj.paymentMethods) && selectedBrandObj.paymentMethods.length > 0) {
         setTimeout(() => {
-          // Helper function to convert payment method IDs to readable labels
-          const getPaymentMethodLabel = (pm) => {
-            switch (pm) {
-              case 'APP':
-                return 'App';
-              case 'CREDIT':
-                return 'Credit card';
-              case 'DEBIT':
-                return 'Debit card';
-              case 'MEMBERSHIP_CARD':
-                return 'Membership card';
-              case 'ONLINE_PAYMENT':
-                return 'Online payment';
-              case 'OTHER':
-                return 'Other';
-              case 'PLUG_IN_AUTO_CHARGE':
-                return 'Plug-in autocharge';
-              default:
-                return pm;
-            }
-          };
-
           setChargingStationPaymentMethods(selectedBrandObj.paymentMethods).then((paymentMethodsSet) => {
             if (paymentMethodsSet) {
               const paymentLabels = selectedBrandObj.paymentMethods.map(getPaymentMethodLabel).join(', ');
@@ -2621,28 +2617,7 @@ https: (function () {
               additionalInfo += '<br><b>Hours:</b> Open 24/7';
             }
             if (selectedBrandObj && selectedBrandObj.paymentMethods && selectedBrandObj.paymentMethods.length > 0) {
-              const paymentDisplay = selectedBrandObj.paymentMethods
-                .map((pm) => {
-                  switch (pm) {
-                    case 'APP':
-                      return 'App';
-                    case 'CREDIT':
-                      return 'Credit card';
-                    case 'DEBIT':
-                      return 'Debit card';
-                    case 'MEMBERSHIP_CARD':
-                      return 'Membership card';
-                    case 'ONLINE_PAYMENT':
-                      return 'Online payment';
-                    case 'OTHER':
-                      return 'Other';
-                    case 'PLUG_IN_AUTO_CHARGE':
-                      return 'Plug-in autocharge';
-                    default:
-                      return pm;
-                  }
-                })
-                .join(', ');
+              const paymentDisplay = selectedBrandObj.paymentMethods.map(getPaymentMethodLabel).join(', ');
               additionalInfo += `<br><b>Payment:</b> ${paymentDisplay}`;
             }
 
@@ -2667,28 +2642,7 @@ https: (function () {
           additionalInfo += '<br><b>Hours:</b> Open 24/7';
         }
         if (selectedBrandObj && selectedBrandObj.paymentMethods && selectedBrandObj.paymentMethods.length > 0) {
-          const paymentDisplay = selectedBrandObj.paymentMethods
-            .map((pm) => {
-              switch (pm) {
-                case 'APP':
-                  return 'App';
-                case 'CREDIT':
-                  return 'Credit card';
-                case 'DEBIT':
-                  return 'Debit card';
-                case 'MEMBERSHIP_CARD':
-                  return 'Membership card';
-                case 'ONLINE_PAYMENT':
-                  return 'Online payment';
-                case 'OTHER':
-                  return 'Other';
-                case 'PLUG_IN_AUTO_CHARGE':
-                  return 'Plug-in autocharge';
-                default:
-                  return pm;
-              }
-            })
-            .join(', ');
+          const paymentDisplay = selectedBrandObj.paymentMethods.map(getPaymentMethodLabel).join(', ');
           additionalInfo += `<br><b>Payment:</b> ${paymentDisplay}`;
         }
 
@@ -2845,13 +2799,6 @@ https: (function () {
 
       if (!countryBrands) return;
 
-      // Log current brand value for debugging
-      if (isPakistan && isGasStation) {
-        console.log('[Brand Debug] Current venue brand value (Pakistan Gas Station):', venue.brand);
-      } else if (isNepal && isChargingStation) {
-        console.log('[Brand Debug] Current venue brand value (Nepal Charging Station):', venue.brand);
-      }
-
       // Build buttons for each brand
       let buttonsHtml = `<div class='form-group e85 e85-e85-14'><label class='control-label'>Set ${stationTypeName} Brand</label>`;
       countryBrands.forEach((brandObj) => {
@@ -2986,7 +2933,7 @@ https: (function () {
   }
   // Start the "scriptupdatemonitor"
   scriptupdatemonitor();
-  console.log(`${scriptName} initialized.`);
+  Logger.info(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
   2025.11.25.02
