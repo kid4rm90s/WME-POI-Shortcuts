@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.11.23.01
+// @version         2025.11.23.02
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -20,7 +20,16 @@
 https: (function () {
   ('use strict');
 
-  const updateMessage = `<br>minor bug fixes</br>`;
+  const updateMessage = `
+      <strong>Charging Station Automation:</strong><br>
+      • Automatically sets network, cost type, and payment methods<br>
+      • Auto-selects network from dropdown (BYD, CG Motors, Tata, etc.)<br>
+      • Sets cost to "Paid" for branded stations<br>
+      • Auto-populates payment methods (App, Online, Debit, Other)<br>
+      <br>
+      <strong>Supported Nepal Charging Stations:</strong><br>
+      BYD, CG Motors, MG Motors, Tata Motors, Hyundai Motors, NEA, ElectriVa Nepal, Yatri, thee Go, MAW Vriddhi, OmodaJaencoo<br>
+  `;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
   const downloadUrl = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/code/wme-poi-shortcuts.user.js';
@@ -148,42 +157,63 @@ https: (function () {
         {
           primaryName: 'BYD',
           brand: 'BYD',
+          networkName: 'BYD', // WME dropdown item-id
+          costType: 'FEE', // FREE, FEE, or COST_TYPE_UNSPECIFIED
+          paymentMethods: ['ONLINE_PAYMENT', 'OTHER', 'DEBIT', 'APP'], // WME payment method item-ids
           aliases: ['EV Charging Station'],
           website: 'cimex.com.np/charging-stations',
         },
         {
           primaryName: 'CG Motors',
           brand: 'CG Motors',
+          networkName: 'CG Motors', // WME dropdown item-id
+          costType: 'FEE', // FREE, FEE, or COST_TYPE_UNSPECIFIED
+          paymentMethods: ['ONLINE_PAYMENT', 'OTHER', 'DEBIT', 'APP'], // WME payment method item-ids
           aliases: ['EV Charging Station'],
           website: 'cg-ev.com/charger-station',
         },
         {
           primaryName: 'MG Motors',
           brand: 'MG Motors',
+          networkName: null, // Not in WME dropdown - will skip network selection
+          costType: 'FEE', // FREE, FEE, or COST_TYPE_UNSPECIFIED
+          paymentMethods: ['ONLINE_PAYMENT', 'OTHER', 'DEBIT', 'APP'], // WME payment method item-ids
           aliases: ['EV Charging Station'],
           website: 'mgmotors.com.np/locate-ev-charger',
         },
         {
           primaryName: 'Tata Motors',
           brand: 'Tata Motors',
+          networkName: 'Tata Motors', // WME dropdown item-id
+          costType: 'FEE', // FREE, FEE, or COST_TYPE_UNSPECIFIED
+          paymentMethods: ['ONLINE_PAYMENT', 'OTHER', 'DEBIT', 'APP'], // WME payment method item-ids
           aliases: ['EV Charging Station'],
           website: 'tatacars.sipradi.com.np/vehicle/charginglocation',
         },
         {
           primaryName: 'Hyundai Motors',
           brand: 'Hyundai Motors',
+          networkName: 'Hyundai Motors', // WME dropdown item-id
+          costType: 'FEE', // FREE, FEE, or COST_TYPE_UNSPECIFIED
+          paymentMethods: ['ONLINE_PAYMENT', 'OTHER', 'DEBIT', 'APP'], // WME payment method item-ids
           aliases: ['EV Charging Station'],
           website: 'laxmihyundai.com/charge-points',
         },
         {
           primaryName: 'NEA',
           brand: 'Nepal Electricity Authority',
+          networkName: 'Nepal Electricity Authority', // WME dropdown item-id
+          costType: 'FEE', // FREE, FEE, or COST_TYPE_UNSPECIFIED
+          paymentMethods: ['ONLINE_PAYMENT', 'OTHER', 'DEBIT', 'APP'], // WME payment method item-ids
           aliases: ['EV Charging Station'],
           website: 'nea.org.np',
         },
         {
           primaryName: 'ElectriVa',
           brand: 'ElectriVa Nepal',
+          networkName: 'ElectriVa Nepal', // WME dropdown item-id
+          costType: 'FEE', // FREE, FEE, or COST_TYPE_UNSPECIFIED
+          paymentMethods: ['ONLINE_PAYMENT', 'OTHER', 'APP'], // WME payment method item-ids
           aliases: ['EV Charging Station'],
           website: 'electrivanepal.com/locations',
           openingHours: [{ days: [0, 1, 2, 3, 4, 5, 6], fromHour: '00:00', toHour: '00:00' }], // 24 hours, 7 days a week (days: 0=Sun, 1=Mon, ..., 6=Sat)
@@ -192,30 +222,45 @@ https: (function () {
         {
           primaryName: 'Yatri',
           brand: 'Yatri',
+          networkName: null, // Not in WME dropdown - will skip network selection
+          costType: 'FEE', // FREE, FEE, or COST_TYPE_UNSPECIFIED
+          paymentMethods: ['ONLINE_PAYMENT', 'OTHER', 'DEBIT', 'APP'], // WME payment method item-ids
           aliases: ['EV Charging Station'],
           website: 'yatrienergy.com/',
         },
         {
           primaryName: 'thee Go',
           brand: 'thee Go',
+          networkName: null, // Not in WME dropdown - will skip network selection
+          costType: 'FEE', // FREE, FEE, or COST_TYPE_UNSPECIFIED
+          paymentMethods: ['ONLINE_PAYMENT', 'OTHER', 'DEBIT', 'APP'], // WME payment method item-ids
           aliases: ['EV Charging Station'],
           website: 'www.theego.com.np/thee-go-chargepoint/',
         },
         {
           primaryName: 'MAW Vriddhi',
           brand: 'Maw Vriddhi',
+          networkName: 'Maw Vriddhi', // WME dropdown item-id
+          costType: 'FEE', // FREE, FEE, or COST_TYPE_UNSPECIFIED
+          paymentMethods: ['ONLINE_PAYMENT', 'OTHER', 'DEBIT', 'APP'], // WME payment method item-ids
           aliases: ['EV Charging Station'],
           website: 'mawevcharging.com/',
         },
         {
           primaryName: 'OmodaJaencoo',
           brand: 'OmodaJaencoo',
+          networkName: null, // Not in WME dropdown - will skip network selection
+          costType: 'FEE', // FREE, FEE, or COST_TYPE_UNSPECIFIED
+          paymentMethods: ['ONLINE_PAYMENT', 'OTHER', 'DEBIT', 'APP'], // WME payment method item-ids
           aliases: ['EV Charging Station'],
           website: 'omodajaecoonepal.com/charging-stations-in-nepal',
         },
         {
           primaryName: 'Charging Station',
           brand: '',
+          networkName: '', // WME dropdown "Other" option
+          costType: 'COST_TYPE_UNSPECIFIED', // FREE, FEE, or COST_TYPE_UNSPECIFIED
+          paymentMethods: ['ONLINE_PAYMENT', 'OTHER', 'DEBIT'], // WME payment method item-ids
           aliases: ['EV Charging Station'],
           website: '',
         },
@@ -1486,6 +1531,480 @@ https: (function () {
     return 'CHARGING_STATION';
   }
 
+  /**
+   * Set the cost type for a charging station
+   * @param {string} costType - The cost type to select: 'FREE', 'FEE', or 'COST_TYPE_UNSPECIFIED'
+   * @returns {Promise<boolean>} - Returns promise that resolves to true if selection was successful
+   */
+  function setChargingStationCostType(costType) {
+    return new Promise((resolve) => {
+      try {
+        // Find the cost wz-select element
+        const costSelect = document.querySelector('wz-select[label="Cost"]');
+        if (!costSelect) {
+          Logger.warn('[Cost Type] wz-select with label "Cost" not found');
+          resolve(false);
+          return;
+        }
+
+        // Wait for shadow root to be attached
+        if (!costSelect.shadowRoot) {
+          Logger.warn('[Cost Type] Shadow root not attached to wz-select');
+          resolve(false);
+          return;
+        }
+
+        // Find the select box to click and open the dropdown
+        const selectBox = costSelect.shadowRoot.querySelector('.select-box');
+        if (!selectBox) {
+          Logger.warn('[Cost Type] Select box not found in shadow root');
+          resolve(false);
+          return;
+        }
+
+        // Find the wz-menu inside the shadow root
+        const menu = costSelect.shadowRoot.querySelector('wz-menu');
+        if (!menu) {
+          Logger.warn('[Cost Type] wz-menu not found in shadow root');
+          resolve(false);
+          return;
+        }
+
+        Logger.info(`[Cost Type] Setting cost type to: ${costType}`);
+
+        // Click the select box to open the dropdown
+        selectBox.click();
+
+        // Wait for menu to open and options to be available
+        setTimeout(() => {
+          // Find the wz-option elements (they are light DOM children of wz-select)
+          const options = costSelect.querySelectorAll('wz-option');
+
+          Logger.info(`[Cost Type] Found ${options.length} cost options`);
+
+          let targetOption = null;
+          for (const option of options) {
+            const value = option.getAttribute('value');
+            Logger.info(`[Cost Type] Checking option: "${value}"`);
+            if (value === costType) {
+              targetOption = option;
+              Logger.info(`[Cost Type] Found matching option for: ${costType}`);
+              break;
+            }
+          }
+
+          if (!targetOption) {
+            Logger.warn(`[Cost Type] Option not found for cost type: ${costType}`);
+            resolve(false);
+            return;
+          }
+
+          // Click the option to select it
+          targetOption.click();
+          Logger.info(`[Cost Type] Successfully set cost type to: ${costType}`);
+          resolve(true);
+        }, 100);
+      } catch (error) {
+        Logger.error('[Cost Type] Error setting cost type:', error);
+        resolve(false);
+      }
+    });
+  }
+
+  /**
+   * Set payment methods for a charging station
+   * @param {Array<string>} paymentMethods - Array of payment method item-ids to select (e.g., ['APP', 'CREDIT', 'DEBIT', 'ONLINE_PAYMENT'])
+   * @returns {Promise<boolean>} - Returns promise that resolves to true if all selections were successful
+   */
+  function setChargingStationPaymentMethods(paymentMethods) {
+    return new Promise((resolve) => {
+      try {
+        if (!paymentMethods || !Array.isArray(paymentMethods) || paymentMethods.length === 0) {
+          Logger.warn('[Payment Methods] No payment methods provided or invalid format');
+          resolve(false);
+          return;
+        }
+
+        // Find the payment method wz-autocomplete element
+        const paymentAutocomplete = document.querySelector('#venue-edit-general wz-autocomplete[placeholder=""]');
+        if (!paymentAutocomplete) {
+          Logger.warn('[Payment Methods] Payment method wz-autocomplete not found');
+          resolve(false);
+          return;
+        }
+
+        // Wait for shadow root to be attached
+        if (!paymentAutocomplete.shadowRoot) {
+          Logger.warn('[Payment Methods] Shadow root not attached to wz-autocomplete');
+          resolve(false);
+          return;
+        }
+
+        // Find the wz-text-input inside the shadow root
+        const wzTextInput = paymentAutocomplete.shadowRoot.querySelector('wz-text-input');
+        if (!wzTextInput) {
+          Logger.warn('[Payment Methods] wz-text-input not found in payment autocomplete shadow root');
+          resolve(false);
+          return;
+        }
+
+        // Find the input element inside wz-text-input shadow root
+        if (!wzTextInput.shadowRoot) {
+          Logger.warn('[Payment Methods] Shadow root not attached to wz-text-input');
+          resolve(false);
+          return;
+        }
+
+        const input = wzTextInput.shadowRoot.querySelector('input');
+        if (!input) {
+          Logger.warn('[Payment Methods] Input element not found in wz-text-input shadow root');
+          resolve(false);
+          return;
+        }
+
+        Logger.info(`[Payment Methods] Setting ${paymentMethods.length} payment methods: ${paymentMethods.join(', ')}`);
+
+        // Function to remove all existing payment method chips
+        const removeAllExistingPaymentMethods = () => {
+          return new Promise((resolveRemove) => {
+            try {
+              // Find the multiselect card that contains the chips
+              const multiselectCard = document.querySelector('#venue-edit-general wz-card.wz-multiselect-card .wz-multiselect-card-content');
+              if (!multiselectCard) {
+                Logger.info('[Payment Methods] No existing payment methods to remove');
+                resolveRemove(true);
+                return;
+              }
+
+              // Find all wz-image-chip elements
+              const existingChips = multiselectCard.querySelectorAll('wz-image-chip[removable]');
+              if (existingChips.length === 0) {
+                Logger.info('[Payment Methods] No existing payment methods found');
+                resolveRemove(true);
+                return;
+              }
+
+              Logger.info(`[Payment Methods] Removing ${existingChips.length} existing payment methods`);
+
+              // Click the remove icon in each chip's shadow root
+              const removeChip = (chip, index) => {
+                return new Promise((resolveChip) => {
+                  if (!chip.shadowRoot) {
+                    Logger.warn(`[Payment Methods] Shadow root not found for chip ${index}`);
+                    resolveChip(false);
+                    return;
+                  }
+
+                  // Find the remove icon span inside the shadow root
+                  const removeIcon = chip.shadowRoot.querySelector('.remove-icon');
+                  if (!removeIcon) {
+                    Logger.warn(`[Payment Methods] Remove icon not found for chip ${index}`);
+                    resolveChip(false);
+                    return;
+                  }
+
+                  // Click the remove icon
+                  removeIcon.click();
+                  Logger.info(`[Payment Methods] Removed existing payment method chip ${index + 1}/${existingChips.length}`);
+                  resolveChip(true);
+                });
+              };
+
+              // Remove all chips sequentially
+              const removeChipsSequentially = async () => {
+                for (let i = 0; i < existingChips.length; i++) {
+                  await removeChip(existingChips[i], i);
+                  // Small delay between removals
+                  if (i < existingChips.length - 1) {
+                    await new Promise((r) => setTimeout(r, 100));
+                  }
+                }
+                Logger.info('[Payment Methods] All existing payment methods removed');
+                resolveRemove(true);
+              };
+
+              removeChipsSequentially();
+            } catch (error) {
+              Logger.error('[Payment Methods] Error removing existing payment methods:', error);
+              resolveRemove(false);
+            }
+          });
+        };
+
+        // Function to add a single payment method
+        const addPaymentMethod = (methodId, index) => {
+          return new Promise((resolveMethod) => {
+            try {
+              // Focus and click the input to open dropdown
+              input.focus();
+              input.click();
+              input.dispatchEvent(new Event('focus', { bubbles: true }));
+              input.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+              // Wait for menu to open and items to load
+              setTimeout(() => {
+                // Find the wz-menu inside the shadow root
+                const menu = paymentAutocomplete.shadowRoot.querySelector('wz-menu');
+                if (!menu) {
+                  Logger.warn(`[Payment Methods] wz-menu not found for method ${methodId}`);
+                  resolveMethod(false);
+                  return;
+                }
+
+                // Find all menu items (they are light DOM children of wz-menu)
+                const menuItems = menu.querySelectorAll('wz-menu-item');
+                Logger.info(`[Payment Methods] Found ${menuItems.length} payment method menu items`);
+
+                // Find the menu item that matches the payment method ID
+                let targetMenuItem = null;
+                for (const item of menuItems) {
+                  const itemId = item.getAttribute('item-id');
+                  if (itemId === methodId) {
+                    targetMenuItem = item;
+                    Logger.info(`[Payment Methods] Found matching menu item for: ${methodId}`);
+                    break;
+                  }
+                }
+
+                if (!targetMenuItem) {
+                  Logger.warn(`[Payment Methods] Menu item not found for payment method: ${methodId}`);
+                  resolveMethod(false);
+                  return;
+                }
+
+                // Click the menu item to select it
+                targetMenuItem.click();
+                Logger.info(`[Payment Methods] Successfully selected payment method: ${methodId}`);
+                resolveMethod(true);
+              }, 300); // Wait for menu to open
+            } catch (error) {
+              Logger.error(`[Payment Methods] Error adding payment method ${methodId}:`, error);
+              resolveMethod(false);
+            }
+          });
+        };
+
+        // Add payment methods sequentially with delays between each
+        const addMethodsSequentially = async () => {
+          // First, remove all existing payment methods
+          await removeAllExistingPaymentMethods();
+
+          // Wait a bit after removal before adding new ones
+          await new Promise((r) => setTimeout(r, 50));
+
+          const results = [];
+          for (let i = 0; i < paymentMethods.length; i++) {
+            const methodId = paymentMethods[i];
+            const success = await addPaymentMethod(methodId, i);
+            results.push(success);
+
+            // Wait between selections to avoid conflicts
+            if (i < paymentMethods.length - 1) {
+              await new Promise((r) => setTimeout(r, 100));
+            }
+          }
+
+          const allSuccessful = results.every((r) => r === true);
+          const successCount = results.filter((r) => r === true).length;
+
+          Logger.info(`[Payment Methods] Added ${successCount}/${paymentMethods.length} payment methods successfully`);
+          resolve(allSuccessful);
+        };
+
+        addMethodsSequentially();
+      } catch (error) {
+        Logger.error('[Payment Methods] Error setting payment methods:', error);
+        resolve(false);
+      }
+    });
+  }
+
+  /**
+   * Programmatically select a charging station network from the WME dropdown
+   * Uses multiple approaches: direct menu click, typing simulation, and wz-autocomplete API
+   * @param {string} networkName - The network name to select (must match WME's item-id)
+   * @param {number} retryCount - Current retry attempt (default: 0)
+   * @param {number} maxRetries - Maximum number of retries (default: 10)
+   * @returns {Promise<boolean>} - Returns promise that resolves to true if selection was successful
+   */
+  function selectChargingStationNetwork(networkName, retryCount = 0, maxRetries = 10) {
+    return new Promise((resolve) => {
+      try {
+        // Find the charging station network autocomplete control
+        let networkControlDiv = document.querySelector('#venue-edit-general .charging-station-network-control-autocomplete');
+
+        // Try alternative selectors if not found
+        if (!networkControlDiv) {
+          networkControlDiv = document.querySelector('.charging-station-network-control-autocomplete');
+        }
+
+        if (!networkControlDiv) {
+          if (retryCount < maxRetries) {
+            Logger.info(`[Network Selection] Control div not found, retrying... (${retryCount + 1}/${maxRetries})`);
+            setTimeout(() => {
+              selectChargingStationNetwork(networkName, retryCount + 1, maxRetries).then(resolve);
+            }, RETRY_INJECTION_DELAY * 2);
+            return;
+          }
+          Logger.warn('[Network Selection] Charging station network control div not found after retries');
+          resolve(false);
+          return;
+        }
+
+        // Get the wz-autocomplete element (direct child of the div)
+        const wzAutocomplete = networkControlDiv.querySelector('wz-autocomplete');
+        if (!wzAutocomplete) {
+          if (retryCount < maxRetries) {
+            Logger.info(`[Network Selection] wz-autocomplete not found, retrying... (${retryCount + 1}/${maxRetries})`);
+            setTimeout(() => {
+              selectChargingStationNetwork(networkName, retryCount + 1, maxRetries).then(resolve);
+            }, RETRY_INJECTION_DELAY * 2);
+            return;
+          }
+          Logger.warn('[Network Selection] wz-autocomplete not found after retries');
+          resolve(false);
+          return;
+        }
+
+        // Wait for shadow root to be attached to wz-autocomplete
+        if (!wzAutocomplete.shadowRoot) {
+          if (retryCount < maxRetries) {
+            Logger.info(`[Network Selection] wz-autocomplete shadow root not attached, retrying... (${retryCount + 1}/${maxRetries})`);
+            setTimeout(() => {
+              selectChargingStationNetwork(networkName, retryCount + 1, maxRetries).then(resolve);
+            }, RETRY_INJECTION_DELAY * 2);
+            return;
+          }
+          Logger.warn('[Network Selection] wz-autocomplete shadow root not attached after retries');
+          resolve(false);
+          return;
+        }
+
+        // Get wz-text-input from inside wz-autocomplete's shadow DOM
+        const textInput = wzAutocomplete.shadowRoot.querySelector('wz-text-input');
+        if (!textInput) {
+          if (retryCount < maxRetries) {
+            Logger.info(`[Network Selection] wz-text-input not found in shadow root, retrying... (${retryCount + 1}/${maxRetries})`);
+            setTimeout(() => {
+              selectChargingStationNetwork(networkName, retryCount + 1, maxRetries).then(resolve);
+            }, RETRY_INJECTION_DELAY * 2);
+            return;
+          }
+          Logger.warn('[Network Selection] wz-text-input not found in shadow root after retries');
+          resolve(false);
+          return;
+        }
+
+        // Wait for shadow root to be attached to wz-text-input
+        if (!textInput.shadowRoot) {
+          if (retryCount < maxRetries) {
+            Logger.info(`[Network Selection] wz-text-input shadow root not attached, retrying... (${retryCount + 1}/${maxRetries})`);
+            setTimeout(() => {
+              selectChargingStationNetwork(networkName, retryCount + 1, maxRetries).then(resolve);
+            }, RETRY_INJECTION_DELAY * 2);
+            return;
+          }
+          Logger.warn('[Network Selection] wz-text-input shadow root not attached after retries');
+          resolve(false);
+          return;
+        }
+
+        // Get the actual input element from wz-text-input's shadow DOM
+        const input = textInput.shadowRoot.querySelector('input');
+        if (!input) {
+          Logger.warn('[Network Selection] Input element not found in wz-text-input shadow root');
+          resolve(false);
+          return;
+        }
+
+        // Find the wz-menu inside wz-autocomplete's shadow DOM
+        const menu = wzAutocomplete.shadowRoot.querySelector('wz-menu');
+        if (!menu) {
+          Logger.warn('[Network Selection] wz-menu not found in wz-autocomplete shadow root');
+          resolve(false);
+          return;
+        }
+
+        // IMPORTANT: Menu items are loaded dynamically when the dropdown is opened
+        // We need to trigger the dropdown to open first, then wait for items to load
+        Logger.info('[Network Selection] Opening dropdown to load menu items...');
+
+        // Focus and click the input to open the dropdown
+        input.focus();
+        input.click();
+
+        // Trigger input event to open dropdown
+        input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+        input.dispatchEvent(new Event('focus', { bubbles: true, composed: true }));
+        input.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true }));
+
+        // Wait for menu items to load (they're populated asynchronously)
+        setTimeout(() => {
+          // Find the menu items - they are LIGHT DOM children of wz-menu (slotted content)
+          const menuItems = menu.querySelectorAll('wz-menu-item');
+
+          Logger.info(`[Network Selection] Found ${menuItems.length} menu items after opening dropdown`);
+
+          if (menuItems.length === 0) {
+            Logger.warn('[Network Selection] No menu items loaded even after opening dropdown');
+            resolve(false);
+            return;
+          }
+
+          let targetMenuItem = null;
+
+          for (const item of menuItems) {
+            const itemId = item.getAttribute('item-id');
+            Logger.info(`[Network Selection] Checking menu item: "${itemId}"`);
+            if (itemId === networkName) {
+              targetMenuItem = item;
+              Logger.info(`[Network Selection] Found matching menu item for: ${networkName}`);
+              break;
+            }
+          }
+
+          if (!targetMenuItem) {
+            Logger.warn(
+              `[Network Selection] Menu item not found for network: "${networkName}". Available items: ${Array.from(menuItems)
+                .map((item) => `"${item.getAttribute('item-id')}"`)
+                .join(', ')}`
+            );
+            resolve(false);
+            return;
+          }
+
+          // Get the display text from the menu item
+          const title = targetMenuItem.getAttribute('title') || networkName;
+
+          // Type the network name to filter/highlight the item
+          Logger.info(`[Network Selection] Typing network name: ${title}`);
+
+          // Clear and type the network name
+          input.value = '';
+          input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+
+          setTimeout(() => {
+            input.value = title;
+
+            // Dispatch events to trigger autocomplete filtering
+            input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+
+            // Click the menu item directly to select it
+            setTimeout(() => {
+              targetMenuItem.click();
+              Logger.info(`[Network Selection] Successfully selected network: ${networkName}`);
+              resolve(true);
+            }, 100);
+          }, 50);
+        }, 300); // Wait 300ms for menu items to load after opening dropdown
+      } catch (error) {
+        Logger.error('[Network Selection] Error selecting network:', error);
+        resolve(false);
+      }
+    });
+  }
+
   function swapPrimaryAndAliasNames(wmeSDK, aliasIndex = 0) {
     // Only run if a venue is selected
     const selection = wmeSDK.Editing.getSelection();
@@ -2026,6 +2545,70 @@ https: (function () {
       wmeSDK.DataModel.Venues.updateVenue(updateObj);
       Logger.info(`[Charging Station] Updated to ${primaryName}`);
 
+      // Select the charging station network from WME dropdown if networkName is available
+      if (selectedBrandObj && selectedBrandObj.networkName !== undefined && selectedBrandObj.networkName !== null) {
+        setTimeout(() => {
+          selectChargingStationNetwork(selectedBrandObj.networkName).then((networkSelected) => {
+            if (networkSelected) {
+              Logger.info(`[Charging Station] Network dropdown updated to: ${selectedBrandObj.networkName}`);
+            } else {
+              Logger.warn(`[Charging Station] Failed to update network dropdown for: ${selectedBrandObj.networkName}`);
+            }
+          });
+        }, RETRY_INJECTION_DELAY * 2);
+      }
+
+      // Set the cost type from WME dropdown if costType is available
+      if (selectedBrandObj && selectedBrandObj.costType) {
+        setTimeout(() => {
+          setChargingStationCostType(selectedBrandObj.costType).then((costTypeSet) => {
+            if (costTypeSet) {
+              const costLabel = selectedBrandObj.costType === 'FREE' ? 'Free' : selectedBrandObj.costType === 'FEE' ? 'Paid' : 'Unspecified';
+              Logger.info(`[Charging Station] Cost type set to: ${costLabel}`);
+            } else {
+              Logger.warn(`[Charging Station] Failed to set cost type to: ${selectedBrandObj.costType}`);
+            }
+          });
+        }, RETRY_INJECTION_DELAY * 4); // Wait longer to ensure network dropdown is done
+      }
+
+      // Set payment methods from WME dropdown if paymentMethods array is available
+      if (selectedBrandObj && selectedBrandObj.paymentMethods && Array.isArray(selectedBrandObj.paymentMethods) && selectedBrandObj.paymentMethods.length > 0) {
+        setTimeout(() => {
+          // Helper function to convert payment method IDs to readable labels
+          const getPaymentMethodLabel = (pm) => {
+            switch (pm) {
+              case 'APP':
+                return 'App';
+              case 'CREDIT':
+                return 'Credit card';
+              case 'DEBIT':
+                return 'Debit card';
+              case 'MEMBERSHIP_CARD':
+                return 'Membership card';
+              case 'ONLINE_PAYMENT':
+                return 'Online payment';
+              case 'OTHER':
+                return 'Other';
+              case 'PLUG_IN_AUTO_CHARGE':
+                return 'Plug-in autocharge';
+              default:
+                return pm;
+            }
+          };
+
+          setChargingStationPaymentMethods(selectedBrandObj.paymentMethods).then((paymentMethodsSet) => {
+            if (paymentMethodsSet) {
+              const paymentLabels = selectedBrandObj.paymentMethods.map(getPaymentMethodLabel).join(', ');
+              Logger.info(`[Charging Station] Payment methods set to: ${paymentLabels}`);
+            } else {
+              const paymentLabels = selectedBrandObj.paymentMethods.map(getPaymentMethodLabel).join(', ');
+              Logger.warn(`[Charging Station] Failed to set payment methods: ${paymentLabels}`);
+            }
+          });
+        }, RETRY_INJECTION_DELAY * 6); // Wait even longer to avoid conflicts with cost type
+      }
+
       // Apply lock rank with delay to prevent conflicts
       if (lockRank !== undefined && lockRank !== null && lockRank !== venue.lockRank) {
         setTimeout(() => {
@@ -2036,6 +2619,31 @@ https: (function () {
             let additionalInfo = '';
             if (selectedBrandObj && selectedBrandObj.is24_7) {
               additionalInfo += '<br><b>Hours:</b> Open 24/7';
+            }
+            if (selectedBrandObj && selectedBrandObj.paymentMethods && selectedBrandObj.paymentMethods.length > 0) {
+              const paymentDisplay = selectedBrandObj.paymentMethods
+                .map((pm) => {
+                  switch (pm) {
+                    case 'APP':
+                      return 'App';
+                    case 'CREDIT':
+                      return 'Credit card';
+                    case 'DEBIT':
+                      return 'Debit card';
+                    case 'MEMBERSHIP_CARD':
+                      return 'Membership card';
+                    case 'ONLINE_PAYMENT':
+                      return 'Online payment';
+                    case 'OTHER':
+                      return 'Other';
+                    case 'PLUG_IN_AUTO_CHARGE':
+                      return 'Plug-in autocharge';
+                    default:
+                      return pm;
+                  }
+                })
+                .join(', ');
+              additionalInfo += `<br><b>Payment:</b> ${paymentDisplay}`;
             }
 
             WazeWrap.Alerts.success(
@@ -2061,10 +2669,24 @@ https: (function () {
         if (selectedBrandObj && selectedBrandObj.paymentMethods && selectedBrandObj.paymentMethods.length > 0) {
           const paymentDisplay = selectedBrandObj.paymentMethods
             .map((pm) => {
-              if (pm === 'app') return 'App';
-              if (pm === 'online_payment') return 'Online Payment';
-              if (pm === 'other') return 'Other';
-              return pm;
+              switch (pm) {
+                case 'APP':
+                  return 'App';
+                case 'CREDIT':
+                  return 'Credit card';
+                case 'DEBIT':
+                  return 'Debit card';
+                case 'MEMBERSHIP_CARD':
+                  return 'Membership card';
+                case 'ONLINE_PAYMENT':
+                  return 'Online payment';
+                case 'OTHER':
+                  return 'Other';
+                case 'PLUG_IN_AUTO_CHARGE':
+                  return 'Plug-in autocharge';
+                default:
+                  return pm;
+              }
             })
             .join(', ');
           additionalInfo += `<br><b>Payment:</b> ${paymentDisplay}`;
@@ -2367,7 +2989,16 @@ https: (function () {
   console.log(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
-    2025.11.23.01
+  2025.11.25.02
+        <strong>Charging Station Automation:</strong><br>
+      • Automatically sets network, cost type, and payment methods<br>
+      • Auto-selects network from dropdown (BYD, CG Motors, Tata, etc.)<br>
+      • Sets cost to "Paid" for branded stations<br>
+      • Auto-populates payment methods (App, Online, Debit, Other)<br>
+      <br>
+      <strong>Supported Nepal Charging Stations:</strong><br>
+      BYD, CG Motors, MG Motors, Tata Motors, Hyundai Motors, NEA, ElectriVa Nepal, Yatri, thee Go, MAW Vriddhi, OmodaJaencoo<br>
+  2025.11.23.01
  - minor bug fixes for thee Go charging stations
   2025.11.13.02
  - minor bug fixes for electriva charging stations
