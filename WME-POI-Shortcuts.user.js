@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.11.15.01
+// @version         2025.11.23.01
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -186,9 +186,7 @@ https: (function () {
           brand: 'ElectriVa Nepal',
           aliases: ['EV Charging Station'],
           website: 'electrivanepal.com/locations',
-          openingHours: [
-            { days: [0, 1, 2, 3, 4, 5, 6], fromHour: '00:00', toHour: '00:00' }
-          ], // 24 hours, 7 days a week (days: 0=Sun, 1=Mon, ..., 6=Sat)
+          openingHours: [{ days: [0, 1, 2, 3, 4, 5, 6], fromHour: '00:00', toHour: '00:00' }], // 24 hours, 7 days a week (days: 0=Sun, 1=Mon, ..., 6=Sat)
           is24_7: true, // Flag for display purposes
         },
         {
@@ -198,8 +196,8 @@ https: (function () {
           website: 'yatrienergy.com/',
         },
         {
-          primaryName: 'three Go',
-          brand: 'three Go',
+          primaryName: 'thee Go',
+          brand: 'thee Go',
           aliases: ['EV Charging Station'],
           website: 'www.theego.com.np/thee-go-chargepoint/',
         },
@@ -1967,7 +1965,7 @@ https: (function () {
   /**
    * Handles charging station brand/network button clicks
    * Updates primary name, brand, website, aliases, and lock rank
-   * 
+   *
    * @param {Object} wmeSDK - The WME SDK instance
    * @param {string} venueId - The venue ID
    * @param {Object} venue - The venue object
@@ -2022,15 +2020,11 @@ https: (function () {
         updateObj.openingHours = selectedBrandObj.openingHours;
       }
 
-
-
       Logger.info('[Charging Station] Updating with:', updateObj);
 
       // Apply venue updates using SDK updateVenue method
       wmeSDK.DataModel.Venues.updateVenue(updateObj);
       Logger.info(`[Charging Station] Updated to ${primaryName}`);
-
-
 
       // Apply lock rank with delay to prevent conflicts
       if (lockRank !== undefined && lockRank !== null && lockRank !== venue.lockRank) {
@@ -2044,7 +2038,6 @@ https: (function () {
               additionalInfo += '<br><b>Hours:</b> Open 24/7';
             }
 
-            
             WazeWrap.Alerts.success(
               'Charging Station Updated',
               `<b>Network:</b> ${primaryName}<br><b>Brand:</b> ${brand}<br><b>Aliases:</b> ${aliases.length > 0 ? aliases.join(', ') : 'None'}<br><b>Lock Rank:</b> ${venue.lockRank + 1} → ${lockRank + 1}${additionalInfo}`,
@@ -2054,40 +2047,30 @@ https: (function () {
             );
           } catch (err) {
             Logger.warn('[Charging Station] Lock rank update failed:', err);
-            WazeWrap.Alerts.warning(
-              'Charging Station Updated',
-              `<b>Network:</b> ${primaryName}<br><b>Brand:</b> ${brand}<br><b>Aliases:</b> ${aliases.length > 0 ? aliases.join(', ') : 'None'}<br>⚠️ Lock rank update failed`,
-              false,
-              false,
-              3000
-            );
+            WazeWrap.Alerts.warning('Charging Station Updated', `<b>Network:</b> ${primaryName}<br><b>Brand:</b> ${brand}<br><b>Aliases:</b> ${aliases.length > 0 ? aliases.join(', ') : 'None'}<br>⚠️ Lock rank update failed`, false, false, 3000);
           }
         }, RETRY_INJECTION_DELAY * 3);
       } else {
         const lockMessage = lockRank !== undefined && lockRank !== null ? `<br><b>Lock Rank:</b> ${lockRank + 1} (unchanged)` : '';
-        
+
         // Build additional info message for opening hours and payment methods
         let additionalInfo = '';
         if (selectedBrandObj && selectedBrandObj.is24_7) {
           additionalInfo += '<br><b>Hours:</b> Open 24/7';
         }
         if (selectedBrandObj && selectedBrandObj.paymentMethods && selectedBrandObj.paymentMethods.length > 0) {
-          const paymentDisplay = selectedBrandObj.paymentMethods.map(pm => {
-            if (pm === 'app') return 'App';
-            if (pm === 'online_payment') return 'Online Payment';
-            if (pm === 'other') return 'Other';
-            return pm;
-          }).join(', ');
+          const paymentDisplay = selectedBrandObj.paymentMethods
+            .map((pm) => {
+              if (pm === 'app') return 'App';
+              if (pm === 'online_payment') return 'Online Payment';
+              if (pm === 'other') return 'Other';
+              return pm;
+            })
+            .join(', ');
           additionalInfo += `<br><b>Payment:</b> ${paymentDisplay}`;
         }
-        
-        WazeWrap.Alerts.success(
-          'Charging Station Updated',
-          `<b>Network:</b> ${primaryName}<br><b>Brand:</b> ${brand}<br><b>Aliases:</b> ${aliases.length > 0 ? aliases.join(', ') : 'None'}${lockMessage}${additionalInfo}`,
-          false,
-          false,
-          4000
-        );
+
+        WazeWrap.Alerts.success('Charging Station Updated', `<b>Network:</b> ${primaryName}<br><b>Brand:</b> ${brand}<br><b>Aliases:</b> ${aliases.length > 0 ? aliases.join(', ') : 'None'}${lockMessage}${additionalInfo}`, false, false, 4000);
       }
     } catch (error) {
       Logger.error('[Charging Station] Error updating:', error);
@@ -2098,7 +2081,7 @@ https: (function () {
   /**
    * Handles gas station brand button clicks (non-NOC)
    * Updates primary name, brand, website, aliases, and lock rank
-   * 
+   *
    * @param {Object} wmeSDK - The WME SDK instance
    * @param {string} venueId - The venue ID
    * @param {Object} venue - The venue object
@@ -2168,24 +2151,12 @@ https: (function () {
             );
           } catch (err) {
             Logger.warn('[Gas Station] Lock rank update failed:', err);
-            WazeWrap.Alerts.warning(
-              'Gas Station Updated',
-              `<b>Brand:</b> ${primaryName}<br><b>Company:</b> ${brand}<br><b>Aliases:</b> ${aliases.length > 0 ? aliases.join(', ') : 'None'}<br>⚠️ Lock rank update failed`,
-              false,
-              false,
-              3000
-            );
+            WazeWrap.Alerts.warning('Gas Station Updated', `<b>Brand:</b> ${primaryName}<br><b>Company:</b> ${brand}<br><b>Aliases:</b> ${aliases.length > 0 ? aliases.join(', ') : 'None'}<br>⚠️ Lock rank update failed`, false, false, 3000);
           }
         }, RETRY_INJECTION_DELAY * 3);
       } else {
         const lockMessage = lockRank !== undefined && lockRank !== null ? `<br><b>Lock Rank:</b> ${lockRank + 1} (unchanged)` : '';
-        WazeWrap.Alerts.success(
-          'Gas Station Updated',
-          `<b>Brand:</b> ${primaryName}<br><b>Company:</b> ${brand}<br><b>Aliases:</b> ${aliases.length > 0 ? aliases.join(', ') : 'None'}${lockMessage}`,
-          false,
-          false,
-          3000
-        );
+        WazeWrap.Alerts.success('Gas Station Updated', `<b>Brand:</b> ${primaryName}<br><b>Company:</b> ${brand}<br><b>Aliases:</b> ${aliases.length > 0 ? aliases.join(', ') : 'None'}${lockMessage}`, false, false, 3000);
       }
     } catch (error) {
       Logger.error('[Gas Station] Error updating:', error);
@@ -2396,6 +2367,8 @@ https: (function () {
   console.log(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
+    2025.11.23.01
+ - minor bug fixes for thee Go charging stations
   2025.11.13.02
  - minor bug fixes for electriva charging stations
   2025.11.12.01
