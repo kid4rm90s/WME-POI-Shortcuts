@@ -1,4 +1,38 @@
-# Release Notes - v2025.11.23.02
+# Release Notes - v2025.12.07.01
+
+## 🔧 Maintenance Release
+
+This is a maintenance release focused on code quality, documentation, and stability improvements.
+
+### 📝 Changes
+
+**Documentation**
+- Updated changelog with version history
+- Improved code documentation and comments
+- Enhanced release notes formatting
+
+**Code Quality**
+- Code cleanup and optimization
+- Performance improvements
+- Stability enhancements
+
+**Bug Fixes**
+- Minor bug fixes for improved reliability
+- Edge case handling improvements
+
+### 📋 Active Features
+
+All features from v2025.11.23.02 remain active:
+- ✅ Charging Station Automation (Nepal)
+- ✅ Gas Station Shortcuts (Nepal & Pakistan)
+- ✅ Auto Name/Alias Management
+- ✅ Lock Rank Auto-Configuration
+- ✅ Payment Method Auto-Population
+- ✅ Network Selection Automation
+
+---
+
+# Previous Release Notes - v2025.11.23.02
 
 ## 🚗 Charging Station Automation - Major Update
 

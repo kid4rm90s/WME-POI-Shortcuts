@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.11.23.02
+// @version         2025.12.07.01
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -21,14 +21,10 @@ https: (function () {
   ('use strict');
 
   const updateMessage = `
-      <strong>Charging Station Automation:</strong><br>
-      • Automatically sets network, cost type, and payment methods<br>
-      • Auto-selects network from dropdown (BYD, CG Motors, Tata, etc.)<br>
-      • Sets cost to "Paid" for branded stations<br>
-      • Auto-populates payment methods (App, Online, Debit, Other)<br>
+      <strong>Added Network Name:</strong><br>
+      • thee GO<br> • thee GO<br> • OmodaJaecoo<br> • Yatri<br> • MG Motors<br>
+      • Bug fixes and stability improvements<br>
       <br>
-      <strong>Supported Nepal Charging Stations:</strong><br>
-      BYD, CG Motors, MG Motors, Tata Motors, Hyundai Motors, NEA, ElectriVa Nepal, Yatri, thee Go, MAW Vriddhi, OmodaJaencoo<br>
   `;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
@@ -175,7 +171,7 @@ https: (function () {
         {
           primaryName: 'MG Motors',
           brand: 'MG Motors',
-          networkName: null, // Not in WME dropdown - will skip network selection
+          networkName: 'MG Motors', // WME dropdown item-id
           costType: 'FEE', // FREE, FEE, or COST_TYPE_UNSPECIFIED
           paymentMethods: ['ONLINE_PAYMENT', 'OTHER', 'DEBIT', 'APP'], // WME payment method item-ids
           aliases: ['EV Charging Station'],
@@ -222,16 +218,16 @@ https: (function () {
         {
           primaryName: 'Yatri',
           brand: 'Yatri',
-          networkName: null, // Not in WME dropdown - will skip network selection
+          networkName: 'Yatri', // WME dropdown item-id
           costType: 'FEE', // FREE, FEE, or COST_TYPE_UNSPECIFIED
           paymentMethods: ['ONLINE_PAYMENT', 'OTHER', 'DEBIT', 'APP'], // WME payment method item-ids
           aliases: ['EV Charging Station'],
           website: 'yatrienergy.com/',
         },
         {
-          primaryName: 'thee Go',
-          brand: 'thee Go',
-          networkName: null, // Not in WME dropdown - will skip network selection
+          primaryName: 'thee GO',
+          brand: 'thee GO',
+          networkName: 'thee GO', // WME dropdown item-id
           costType: 'FEE', // FREE, FEE, or COST_TYPE_UNSPECIFIED
           paymentMethods: ['ONLINE_PAYMENT', 'OTHER', 'DEBIT', 'APP'], // WME payment method item-ids
           aliases: ['EV Charging Station'],
@@ -247,9 +243,9 @@ https: (function () {
           website: 'mawevcharging.com/',
         },
         {
-          primaryName: 'OmodaJaencoo',
-          brand: 'OmodaJaencoo',
-          networkName: null, // Not in WME dropdown - will skip network selection
+          primaryName: 'OmodaJaecoo',
+          brand: 'OmodaJaecoo',
+          networkName: 'Omoda & Jaecoo', // WME dropdown item-id
           costType: 'FEE', // FREE, FEE, or COST_TYPE_UNSPECIFIED
           paymentMethods: ['ONLINE_PAYMENT', 'OTHER', 'DEBIT', 'APP'], // WME payment method item-ids
           aliases: ['EV Charging Station'],
@@ -259,7 +255,7 @@ https: (function () {
           primaryName: 'Charging Station',
           brand: '',
           networkName: '', // WME dropdown "Other" option
-          costType: 'COST_TYPE_UNSPECIFIED', // FREE, FEE, or COST_TYPE_UNSPECIFIED
+          costType: 'FEE', // FREE, FEE, or COST_TYPE_UNSPECIFIED
           paymentMethods: ['ONLINE_PAYMENT', 'OTHER', 'DEBIT'], // WME payment method item-ids
           aliases: ['EV Charging Station'],
           website: '',
@@ -2944,7 +2940,7 @@ https: (function () {
       • Auto-populates payment methods (App, Online, Debit, Other)<br>
       <br>
       <strong>Supported Nepal Charging Stations:</strong><br>
-      BYD, CG Motors, MG Motors, Tata Motors, Hyundai Motors, NEA, ElectriVa Nepal, Yatri, thee Go, MAW Vriddhi, OmodaJaencoo<br>
+      BYD, CG Motors, MG Motors, Tata Motors, Hyundai Motors, NEA, ElectriVa Nepal, Yatri, thee Go, MAW Vriddhi, OmodaJaecoo<br>
   2025.11.23.01
  - minor bug fixes for thee Go charging stations
   2025.11.13.02
