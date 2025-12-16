@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2025.12.17.01] - 2025-12-17
+
+### 🐛 Bug Fixes
+
+#### Fixed
+- Added try-catch blocks around WazeWrap alert calls to prevent script crashes when WazeWrap encounters errors (e.g., `wazedevtoastr is not defined`).
+- Improved error logging for alert failures.
+
+---
+
 ## [2025.12.07.01] - 2025-12-07
 
 ### 🔧 Maintenance Release
