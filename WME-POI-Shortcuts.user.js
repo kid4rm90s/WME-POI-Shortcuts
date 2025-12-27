@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2025.12.17.01
+// @version         2025.12.27.01
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -9,20 +9,18 @@
 // @connect         greasyfork.org
 // @grant           GM_xmlhttpRequest
 // @grant           GM_addElement
-// @require         https://greasyfork.org/scripts/24851-wazewrap/code/WazeWrap.js
-// @require         https://update.greasyfork.org/scripts/509664/WME%20Utils%20-%20Bootstrap.js
+// @require         https://greasyfork.org/scripts/560385/code/WazeToastr.js
 // @require         https://greasyfork.org/scripts/523706-google-link-enhancer/code/Link%20Enhancer.js
 // ==/UserScript==
 
-/* global WazeWrap */
+/* global WazeToastr */
 /* global bootstrap */
 
 https: (function () {
   ('use strict');
 
   const updateMessage = `
-      <strong>Bug Fixes:</strong><br>
-      • Added error handling for WazeWrap alerts to prevent script failures when WazeWrap is not fully loaded or encounters issues.<br>
+      <strong>Fixed :</strong><br> - Temporary fix for alerts not displaying properly.<br>
       <br>
   `;
   const scriptName = GM_info.script.name;
@@ -953,9 +951,9 @@ https: (function () {
         func: function (ev) {
           ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_toll_booth', () => {
             try {
-              WazeWrap.Alerts.info('POI Shortcut', `POI Type: <b>Toll Booth</b>`, false, false, 2000);
+              WazeToastr.Alerts.info('POI Shortcut', `POI Type: <b>Toll Booth</b>`, false, false, 2000);
             } catch (e) {
-              Logger.warn('WazeWrap.Alerts.info failed:', e);
+              Logger.warn('WazeToastr.Alerts.info failed:', e);
             }
             $("wz-icon[name='toll-booth']").parent().trigger('click');
           });
@@ -969,9 +967,9 @@ https: (function () {
         func: function (ev) {
           ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_railroad_crossing', () => {
             try {
-              WazeWrap.Alerts.info('POI Shortcut', `POI Type: <b>Level Crossing</b>`, false, false, 2000);
+              WazeToastr.Alerts.info('POI Shortcut', `POI Type: <b>Level Crossing</b>`, false, false, 2000);
             } catch (e) {
-              Logger.warn('WazeWrap.Alerts.info failed:', e);
+              Logger.warn('WazeToastr.Alerts.info failed:', e);
             }
             $("wz-icon[name='railway-crossing']").parent().trigger('click');
           });
@@ -985,9 +983,9 @@ https: (function () {
         func: function (ev) {
           ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_school_zone', () => {
             try {
-              WazeWrap.Alerts.info('POI Shortcut', `POI Type: <b>School Zone</b>`, false, false, 2000);
+              WazeToastr.Alerts.info('POI Shortcut', `POI Type: <b>School Zone</b>`, false, false, 2000);
             } catch (e) {
-              Logger.warn('WazeWrap.Alerts.info failed:', e);
+              Logger.warn('WazeToastr.Alerts.info failed:', e);
             }
             $("wz-icon[name='school-zone']").parent().trigger('click');
           });
@@ -1001,9 +999,9 @@ https: (function () {
         func: function (ev) {
           ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_dangerous_curve', () => {
             try {
-              WazeWrap.Alerts.info('POI Shortcut', `POI Type: <b>Sharp Curves</b>`, false, false, 2000);
+              WazeToastr.Alerts.info('POI Shortcut', `POI Type: <b>Sharp Curves</b>`, false, false, 2000);
             } catch (e) {
-              Logger.warn('WazeWrap.Alerts.info failed:', e);
+              Logger.warn('WazeToastr.Alerts.info failed:', e);
             }
             $("wz-icon[name='sharp-curve-ahead']").parent().trigger('click');
           });
@@ -1017,9 +1015,9 @@ https: (function () {
         func: function (ev) {
           ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_dangerous_intersection', () => {
             try {
-              WazeWrap.Alerts.info('POI Shortcut', `POI Type: <b>Complex Junctions</b>`, false, false, 2000);
+              WazeToastr.Alerts.info('POI Shortcut', `POI Type: <b>Complex Junctions</b>`, false, false, 2000);
             } catch (e) {
-              Logger.warn('WazeWrap.Alerts.info failed:', e);
+              Logger.warn('WazeToastr.Alerts.info failed:', e);
             }
             $("wz-icon[name='dangerous-intersection']").parent().trigger('click');
           });
@@ -1033,9 +1031,9 @@ https: (function () {
         func: function (ev) {
           ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_dangerous_merge', () => {
             try {
-              WazeWrap.Alerts.info('POI Shortcut', `POI Type: <b>Multiple Lanes Merging</b>`, false, false, 2000);
+              WazeToastr.Alerts.info('POI Shortcut', `POI Type: <b>Multiple Lanes Merging</b>`, false, false, 2000);
             } catch (e) {
-              Logger.warn('WazeWrap.Alerts.info failed:', e);
+              Logger.warn('WazeToastr.Alerts.info failed:', e);
             }
             $("wz-icon[name='merge-ahead']").parent().trigger('click');
           });
@@ -1093,9 +1091,9 @@ https: (function () {
     } catch (error) {
       Logger.error('Error in convertOtherToResidential:', error);
       try {
-        WazeWrap.Alerts.error('POI Shortcut', 'An unexpected error occurred during conversion.', false, false, 3000);
+        WazeToastr.Alerts.error('POI Shortcut', 'An unexpected error occurred during conversion.', false, false, 3000);
       } catch (e) {
-        Logger.warn('WazeWrap.Alerts.error failed:', e);
+        Logger.warn('WazeToastr.Alerts.error failed:', e);
       }
     }
   }
@@ -1111,9 +1109,9 @@ https: (function () {
 
     if (!selection || selection.objectType !== 'venue' || !selection.ids || selection.ids.length !== 1) {
       try {
-        WazeWrap.Alerts.warning('POI Shortcut', 'Please select a venue first.', false, false, 3000);
+        WazeToastr.Alerts.warning('POI Shortcut', 'Please select a venue first.', false, false, 3000);
       } catch (e) {
-        Logger.warn('WazeWrap.Alerts.warning failed:', e);
+        Logger.warn('WazeToastr.Alerts.warning failed:', e);
       }
       return null;
     }
@@ -1123,9 +1121,9 @@ https: (function () {
 
     if (!venue) {
       try {
-        WazeWrap.Alerts.error('POI Shortcut', 'Venue not found.', false, false, 3000);
+        WazeToastr.Alerts.error('POI Shortcut', 'Venue not found.', false, false, 3000);
       } catch (e) {
-        Logger.warn('WazeWrap.Alerts.error failed:', e);
+        Logger.warn('WazeToastr.Alerts.error failed:', e);
       }
       return null;
     }
@@ -1148,9 +1146,9 @@ https: (function () {
 
     if (!isOther) {
       try {
-        WazeWrap.Alerts.warning('POI Shortcut', `This function only works with venues of type OTHER. Actual: ${venueCategories.join(', ')}`, false, false, 3000);
+        WazeToastr.Alerts.warning('POI Shortcut', `This function only works with venues of type OTHER. Actual: ${venueCategories.join(', ')}`, false, false, 3000);
       } catch (e) {
-        Logger.warn('WazeWrap.Alerts.warning failed:', e);
+        Logger.warn('WazeToastr.Alerts.warning failed:', e);
       }
       return false;
     }
@@ -1167,9 +1165,9 @@ https: (function () {
   function hasValidPrimaryName(venue) {
     if (!venue.name || !venue.name.trim()) {
       try {
-        WazeWrap.Alerts.warning('POI Shortcut', 'Primary name is empty and cannot be used as house number.', false, false, 3000);
+        WazeToastr.Alerts.warning('POI Shortcut', 'Primary name is empty and cannot be used as house number.', false, false, 3000);
       } catch (e) {
-        Logger.warn('WazeWrap.Alerts.warning failed:', e);
+        Logger.warn('WazeToastr.Alerts.warning failed:', e);
       }
       return false;
     }
@@ -1188,9 +1186,9 @@ https: (function () {
       .then((hasHouseNumber) => {
         if (hasHouseNumber) {
           try {
-            WazeWrap.Alerts.warning('POI Shortcut', 'Venue already has a house number in its address.', false, false, 3000);
+            WazeToastr.Alerts.warning('POI Shortcut', 'Venue already has a house number in its address.', false, false, 3000);
           } catch (e) {
-            Logger.warn('WazeWrap.Alerts.warning failed:', e);
+            Logger.warn('WazeToastr.Alerts.warning failed:', e);
           }
           return;
         }
@@ -1203,9 +1201,9 @@ https: (function () {
       .catch((error) => {
         Logger.error('Error updating venue address:', error);
         try {
-          WazeWrap.Alerts.error('POI Shortcut', 'Failed to update venue address.', false, false, 3000);
+          WazeToastr.Alerts.error('POI Shortcut', 'Failed to update venue address.', false, false, 3000);
         } catch (e) {
-          Logger.warn('WazeWrap.Alerts.error failed:', e);
+          Logger.warn('WazeToastr.Alerts.error failed:', e);
         }
       });
   }
@@ -1262,15 +1260,15 @@ https: (function () {
 
       if (buttonClicked) {
         try {
-          WazeWrap.Alerts.info('POI Shortcut', `Successfully converted venue "${venueName}" to residential.`, false, false, 1000);
+          WazeToastr.Alerts.info('POI Shortcut', `Successfully converted venue "${venueName}" to residential.`, false, false, 1000);
         } catch (e) {
-          Logger.warn('WazeWrap.Alerts.info failed:', e);
+          Logger.warn('WazeToastr.Alerts.info failed:', e);
         }
       } else {
         try {
-          WazeWrap.Alerts.warning('POI Shortcut', `House number set to "${venueName}". Please manually click "Convert to residential" button.`, false, false, 3000);
+          WazeToastr.Alerts.warning('POI Shortcut', `House number set to "${venueName}". Please manually click "Convert to residential" button.`, false, false, 3000);
         } catch (e) {
-          Logger.warn('WazeWrap.Alerts.warning failed:', e);
+          Logger.warn('WazeToastr.Alerts.warning failed:', e);
         }
       }
     }, 500);
@@ -1374,14 +1372,14 @@ https: (function () {
         Logger.warn(`POI Shortcut ${slotNumber}: No category selected`);
         return;
       }
-      // Show WazeWrap alert with POI info before drawing
+      // Show WazeToastr alert with POI info before drawing
       const poiName = $(`#poiItem${slotNumber} option:selected`).text();
       const lockLevel = !isNaN(lock) ? parseInt(lock, 10) + 1 : 1;
       const areaType = geomType === 'point' ? 'Point' : 'Area';
       try {
-        WazeWrap.Alerts.info('POI Shortcut', `Selected POI Name: <b>${poiName}</b><br>Lock Level: <b>${lockLevel}</b><br>Type: <b>${areaType}</b>`, false, false, 2500);
+        WazeToastr.Alerts.info('POI Shortcut', `Selected POI Name: <b>${poiName}</b><br>Lock Level: <b>${lockLevel}</b><br>Type: <b>${areaType}</b>`, false, false, 2500);
       } catch (e) {
-        Logger.warn('WazeWrap.Alerts.info failed:', e);
+        Logger.warn('WazeToastr.Alerts.info failed:', e);
       }
 
       // Geometry: area = drawPolygon, point = drawPoint
@@ -1551,9 +1549,9 @@ https: (function () {
   function WMEKSSaveKeyboardShortcuts(scriptName) {
     Logger.info(`Saving keyboard shortcuts for ${scriptName}`);
     try {
-      WazeWrap.Alerts.success('POI Shortcut', `Saving keyboard shortcuts for ${scriptName}`, false, false, 3000);
+      WazeToastr.Alerts.success('POI Shortcut', `Saving keyboard shortcuts for ${scriptName}`, false, false, 3000);
     } catch (e) {
-      Logger.warn('WazeWrap.Alerts.success failed:', e);
+      Logger.warn('WazeToastr.Alerts.success failed:', e);
     }
     const shortcuts = [];
     for (var actionName in W.accelerators.Actions) {
@@ -1600,15 +1598,23 @@ https: (function () {
    * @returns {string} - Human-readable label (e.g., 'Online payment', 'App')
    */
   function getPaymentMethodLabel(paymentMethodId) {
-    switch(paymentMethodId) {
-      case 'APP': return 'App';
-      case 'CREDIT': return 'Credit card';
-      case 'DEBIT': return 'Debit card';
-      case 'MEMBERSHIP_CARD': return 'Membership card';
-      case 'ONLINE_PAYMENT': return 'Online payment';
-      case 'OTHER': return 'Other';
-      case 'PLUG_IN_AUTO_CHARGE': return 'Plug-in autocharge';
-      default: return paymentMethodId;
+    switch (paymentMethodId) {
+      case 'APP':
+        return 'App';
+      case 'CREDIT':
+        return 'Credit card';
+      case 'DEBIT':
+        return 'Debit card';
+      case 'MEMBERSHIP_CARD':
+        return 'Membership card';
+      case 'ONLINE_PAYMENT':
+        return 'Online payment';
+      case 'OTHER':
+        return 'Other';
+      case 'PLUG_IN_AUTO_CHARGE':
+        return 'Plug-in autocharge';
+      default:
+        return paymentMethodId;
     }
   }
 
@@ -2139,9 +2145,9 @@ https: (function () {
 
       Logger.info(`Swapped names: "${currentPrimaryName}" ↔ "${targetAlias}" (alias index: ${aliasIndex})`);
       try {
-        WazeWrap.Alerts.info('POI Shortcut', `Swapped names: "<b>${currentPrimaryName}</b>" ↔ "<b>${targetAlias}</b>"`, false, false, 3000);
+        WazeToastr.Alerts.info('POI Shortcut', `Swapped names: "<b>${currentPrimaryName}</b>" ↔ "<b>${targetAlias}</b>"`, false, false, 3000);
       } catch (e) {
-        Logger.warn('WazeWrap.Alerts.info failed:', e);
+        Logger.warn('WazeToastr.Alerts.info failed:', e);
       }
 
       // Re-inject swap buttons so icon appears immediately
@@ -2411,33 +2417,33 @@ https: (function () {
               wmeSDK.DataModel.Venues.updateVenue({ venueId: venueId, lockRank: lockRank });
               Logger.info('[NOC Debug] lockRank updated successfully:', lockRank);
               try {
-                WazeWrap.Alerts.info('NOC Update', `<b>Case 1:</b> Empty gas station updated<br>Primary: <b>NOC</b><br>Brand: <b>Nepal Oil Corporation</b><br>Lock Rank: <b>${venue.lockRank + 1}</b> → <b>${lockRank + 1}</b>`, false, false, 3000);
+                WazeToastr.Alerts.info('NOC Update', `<b>Case 1:</b> Empty gas station updated<br>Primary: <b>NOC</b><br>Brand: <b>Nepal Oil Corporation</b><br>Lock Rank: <b>${venue.lockRank + 1}</b> → <b>${lockRank + 1}</b>`, false, false, 3000);
               } catch (e) {
-                Logger.warn('WazeWrap.Alerts.info failed:', e);
+                Logger.warn('WazeToastr.Alerts.info failed:', e);
               }
             } catch (err) {
               Logger.warn('[NOC Debug] lockRank update failed:', err);
               try {
-                WazeWrap.Alerts.warning('NOC Update', `<b>Case 1:</b> Empty gas station updated<br>Primary: <b>NOC</b><br>Brand: <b>Nepal Oil Corporation</b><br>⚠️ Lock rank update failed`, false, false, 3000);
+                WazeToastr.Alerts.warning('NOC Update', `<b>Case 1:</b> Empty gas station updated<br>Primary: <b>NOC</b><br>Brand: <b>Nepal Oil Corporation</b><br>⚠️ Lock rank update failed`, false, false, 3000);
               } catch (e) {
-                Logger.warn('WazeWrap.Alerts.warning failed:', e);
+                Logger.warn('WazeToastr.Alerts.warning failed:', e);
               }
             }
           }, RETRY_INJECTION_DELAY * 3);
         } else {
           const lockMessage = lockRank !== undefined && lockRank !== null ? `<br>Lock Rank: <b>${lockRank + 1}</b> (unchanged)` : '';
           try {
-            WazeWrap.Alerts.info('NOC Update', `<b>Case 1:</b> Empty gas station updated<br>Primary: <b>NOC</b><br>Brand: <b>Nepal Oil Corporation</b>${lockMessage}`, false, false, 3000);
+            WazeToastr.Alerts.info('NOC Update', `<b>Case 1:</b> Empty gas station updated<br>Primary: <b>NOC</b><br>Brand: <b>Nepal Oil Corporation</b>${lockMessage}`, false, false, 3000);
           } catch (e) {
-            Logger.warn('WazeWrap.Alerts.info failed:', e);
+            Logger.warn('WazeToastr.Alerts.info failed:', e);
           }
         }
       } catch (err) {
         Logger.error('NOC: Error updating venue (Case 1):', err);
         try {
-          WazeWrap.Alerts.error('NOC Error', 'Failed to update empty gas station', false, false, 3000);
+          WazeToastr.Alerts.error('NOC Error', 'Failed to update empty gas station', false, false, 3000);
         } catch (e) {
-          Logger.warn('WazeWrap.Alerts.error failed:', e);
+          Logger.warn('WazeToastr.Alerts.error failed:', e);
         }
         return;
       }
@@ -2480,33 +2486,33 @@ https: (function () {
               wmeSDK.DataModel.Venues.updateVenue({ venueId: venueId, lockRank: lockRank });
               Logger.info('[NOC Debug] lockRank updated successfully:', lockRank);
               try {
-                WazeWrap.Alerts.info('NOC Update', `<b>Case 2:</b> Smart swap completed<br>Primary: <b>${newPrimaryName}</b><br>NOC moved to aliases<br>Lock Rank: <b>${venue.lockRank + 1}</b> → <b>${lockRank + 1}</b>`, false, false, 3000);
+                WazeToastr.Alerts.info('NOC Update', `<b>Case 2:</b> Smart swap completed<br>Primary: <b>${newPrimaryName}</b><br>NOC moved to aliases<br>Lock Rank: <b>${venue.lockRank + 1}</b> → <b>${lockRank + 1}</b>`, false, false, 3000);
               } catch (e) {
-                Logger.warn('WazeWrap.Alerts.info failed:', e);
+                Logger.warn('WazeToastr.Alerts.info failed:', e);
               }
             } catch (err) {
               Logger.warn('[NOC Debug] lockRank update failed:', err);
               try {
-                WazeWrap.Alerts.warning('NOC Update', `<b>Case 2:</b> Smart swap completed<br>Primary: <b>${newPrimaryName}</b><br>NOC moved to aliases<br>⚠️ Lock rank update failed`, false, false, 3000);
+                WazeToastr.Alerts.warning('NOC Update', `<b>Case 2:</b> Smart swap completed<br>Primary: <b>${newPrimaryName}</b><br>NOC moved to aliases<br>⚠️ Lock rank update failed`, false, false, 3000);
               } catch (e) {
-                Logger.warn('WazeWrap.Alerts.warning failed:', e);
+                Logger.warn('WazeToastr.Alerts.warning failed:', e);
               }
             }
           }, RETRY_INJECTION_DELAY * 3);
         } else {
           const lockMessage = lockRank !== undefined && lockRank !== null ? `<br>Lock Rank: <b>${lockRank + 1}</b> (unchanged)` : '';
           try {
-            WazeWrap.Alerts.info('NOC Update', `<b>Case 2:</b> Smart swap completed<br>Primary: <b>${newPrimaryName}</b><br>NOC moved to aliases${lockMessage}`, false, false, 3000);
+            WazeToastr.Alerts.info('NOC Update', `<b>Case 2:</b> Smart swap completed<br>Primary: <b>${newPrimaryName}</b><br>NOC moved to aliases${lockMessage}`, false, false, 3000);
           } catch (e) {
-            Logger.warn('WazeWrap.Alerts.info failed:', e);
+            Logger.warn('WazeToastr.Alerts.info failed:', e);
           }
         }
       } catch (err) {
         Logger.error('NOC: Error updating venue (Case 2):', err);
         try {
-          WazeWrap.Alerts.error('NOC Error', 'Failed to swap NOC with alias name', false, false, 3000);
+          WazeToastr.Alerts.error('NOC Error', 'Failed to swap NOC with alias name', false, false, 3000);
         } catch (e) {
-          Logger.warn('WazeWrap.Alerts.error failed:', e);
+          Logger.warn('WazeToastr.Alerts.error failed:', e);
         }
         return;
       }
@@ -2534,33 +2540,33 @@ https: (function () {
               wmeSDK.DataModel.Venues.updateVenue({ venueId: venueId, lockRank: lockRank });
               Logger.info('[NOC Debug] lockRank updated successfully:', lockRank);
               try {
-                WazeWrap.Alerts.info('NOC Update', `<b>Case 3:</b> NOC added as alias<br>Primary: <b>${currentName}</b><br>NOC added to aliases<br>Lock Rank: <b>${venue.lockRank + 1}</b> → <b>${lockRank + 1}</b>`, false, false, 3000);
+                WazeToastr.Alerts.info('NOC Update', `<b>Case 3:</b> NOC added as alias<br>Primary: <b>${currentName}</b><br>NOC added to aliases<br>Lock Rank: <b>${venue.lockRank + 1}</b> → <b>${lockRank + 1}</b>`, false, false, 3000);
               } catch (e) {
-                Logger.warn('WazeWrap.Alerts.info failed:', e);
+                Logger.warn('WazeToastr.Alerts.info failed:', e);
               }
             } catch (err) {
               Logger.warn('[NOC Debug] lockRank update failed:', err);
               try {
-                WazeWrap.Alerts.warning('NOC Update', `<b>Case 3:</b> NOC added as alias<br>Primary: <b>${currentName}</b><br>NOC added to aliases<br>⚠️ Lock rank update failed`, false, false, 3000);
+                WazeToastr.Alerts.warning('NOC Update', `<b>Case 3:</b> NOC added as alias<br>Primary: <b>${currentName}</b><br>NOC added to aliases<br>⚠️ Lock rank update failed`, false, false, 3000);
               } catch (e) {
-                Logger.warn('WazeWrap.Alerts.warning failed:', e);
+                Logger.warn('WazeToastr.Alerts.warning failed:', e);
               }
             }
           }, RETRY_INJECTION_DELAY * 3);
         } else {
           const lockMessage = lockRank !== undefined && lockRank !== null ? `<br>Lock Rank: <b>${lockRank + 1}</b> (unchanged)` : '';
           try {
-            WazeWrap.Alerts.info('NOC Update', `<b>Case 3:</b> NOC added as alias<br>Primary: <b>${currentName}</b><br>NOC added to aliases${lockMessage}`, false, false, 3000);
+            WazeToastr.Alerts.info('NOC Update', `<b>Case 3:</b> NOC added as alias<br>Primary: <b>${currentName}</b><br>NOC added to aliases${lockMessage}`, false, false, 3000);
           } catch (e) {
-            Logger.warn('WazeWrap.Alerts.info failed:', e);
+            Logger.warn('WazeToastr.Alerts.info failed:', e);
           }
         }
       } catch (err) {
         Logger.error('NOC: Error updating venue (Case 3):', err);
         try {
-          WazeWrap.Alerts.error('NOC Error', 'Failed to add NOC as alias', false, false, 3000);
+          WazeToastr.Alerts.error('NOC Error', 'Failed to add NOC as alias', false, false, 3000);
         } catch (e) {
-          Logger.warn('WazeWrap.Alerts.error failed:', e);
+          Logger.warn('WazeToastr.Alerts.error failed:', e);
         }
         return;
       }
@@ -2578,25 +2584,25 @@ https: (function () {
             wmeSDK.DataModel.Venues.updateVenue({ venueId: venueId, lockRank: lockRank });
             Logger.info(`[NOC Debug] lockRank updated successfully: ${lockRank} (was ${venue.lockRank})`);
             try {
-              WazeWrap.Alerts.info('NOC Update', `<b>Edge Case:</b> NOC already in aliases<br>Lock rank updated: <b>${venue.lockRank + 1}</b> → <b>${lockRank + 1}</b>`, false, false, 3000);
+              WazeToastr.Alerts.info('NOC Update', `<b>Edge Case:</b> NOC already in aliases<br>Lock rank updated: <b>${venue.lockRank + 1}</b> → <b>${lockRank + 1}</b>`, false, false, 3000);
             } catch (e) {
-              Logger.warn('WazeWrap.Alerts.info failed:', e);
+              Logger.warn('WazeToastr.Alerts.info failed:', e);
             }
           } catch (err) {
             Logger.warn('[NOC Debug] lockRank update failed:', err);
             try {
-              WazeWrap.Alerts.warning('NOC Update', `<b>Edge Case:</b> NOC already in aliases<br>⚠️ Lock rank update failed`, false, false, 3000);
+              WazeToastr.Alerts.warning('NOC Update', `<b>Edge Case:</b> NOC already in aliases<br>⚠️ Lock rank update failed`, false, false, 3000);
             } catch (e) {
-              Logger.warn('WazeWrap.Alerts.warning failed:', e);
+              Logger.warn('WazeToastr.Alerts.warning failed:', e);
             }
           }
         }, RETRY_INJECTION_DELAY * 3);
       } else {
         Logger.info('NOC: No changes needed - NOC exists and lock rank unchanged');
         try {
-          WazeWrap.Alerts.info('NOC Update', '<b>No Changes:</b> NOC already in aliases<br>Lock rank already correct', false, false, 2500);
+          WazeToastr.Alerts.info('NOC Update', '<b>No Changes:</b> NOC already in aliases<br>Lock rank already correct', false, false, 2500);
         } catch (e) {
-          Logger.warn('WazeWrap.Alerts.info failed:', e);
+          Logger.warn('WazeToastr.Alerts.info failed:', e);
         }
       }
       return;
@@ -2613,25 +2619,25 @@ https: (function () {
             wmeSDK.DataModel.Venues.updateVenue({ venueId: venueId, lockRank: lockRank });
             Logger.info(`[NOC Debug] lockRank updated successfully: ${lockRank} (was ${venue.lockRank})`);
             try {
-              WazeWrap.Alerts.info('NOC Update', `<b>Edge Case:</b> NOC already primary<br>Lock rank updated: <b>${venue.lockRank + 1}</b> → <b>${lockRank + 1}</b>`, false, false, 3000);
+              WazeToastr.Alerts.info('NOC Update', `<b>Edge Case:</b> NOC already primary<br>Lock rank updated: <b>${venue.lockRank + 1}</b> → <b>${lockRank + 1}</b>`, false, false, 3000);
             } catch (e) {
-              Logger.warn('WazeWrap.Alerts.info failed:', e);
+              Logger.warn('WazeToastr.Alerts.info failed:', e);
             }
           } catch (err) {
             Logger.warn('[NOC Debug] lockRank update failed:', err);
             try {
-              WazeWrap.Alerts.warning('NOC Update', `<b>Edge Case:</b> NOC already primary<br>⚠️ Lock rank update failed`, false, false, 3000);
+              WazeToastr.Alerts.warning('NOC Update', `<b>Edge Case:</b> NOC already primary<br>⚠️ Lock rank update failed`, false, false, 3000);
             } catch (e) {
-              Logger.warn('WazeWrap.Alerts.warning failed:', e);
+              Logger.warn('WazeToastr.Alerts.warning failed:', e);
             }
           }
         }, RETRY_INJECTION_DELAY * 3);
       } else {
         Logger.info('NOC: No changes needed - NOC is primary and lock rank unchanged');
         try {
-          WazeWrap.Alerts.info('NOC Update', '<b>No Changes:</b> NOC already primary<br>Lock rank already correct', false, false, 2500);
+          WazeToastr.Alerts.info('NOC Update', '<b>No Changes:</b> NOC already primary<br>Lock rank already correct', false, false, 2500);
         } catch (e) {
-          Logger.warn('WazeWrap.Alerts.info failed:', e);
+          Logger.warn('WazeToastr.Alerts.info failed:', e);
         }
       }
       return;
@@ -2761,7 +2767,7 @@ https: (function () {
             }
 
             try {
-              WazeWrap.Alerts.success(
+              WazeToastr.Alerts.success(
                 'Charging Station Updated',
                 `<b>Network:</b> ${primaryName}<br><b>Brand:</b> ${brand}<br><b>Aliases:</b> ${aliases.length > 0 ? aliases.join(', ') : 'None'}<br><b>Lock Rank:</b> ${venue.lockRank + 1} → ${lockRank + 1}${additionalInfo}`,
                 false,
@@ -2769,14 +2775,14 @@ https: (function () {
                 4000
               );
             } catch (e) {
-              Logger.warn('WazeWrap.Alerts.success failed:', e);
+              Logger.warn('WazeToastr.Alerts.success failed:', e);
             }
           } catch (err) {
             Logger.warn('[Charging Station] Lock rank update failed:', err);
             try {
-              WazeWrap.Alerts.warning('Charging Station Updated', `<b>Network:</b> ${primaryName}<br><b>Brand:</b> ${brand}<br><b>Aliases:</b> ${aliases.length > 0 ? aliases.join(', ') : 'None'}<br>⚠️ Lock rank update failed`, false, false, 3000);
+              WazeToastr.Alerts.warning('Charging Station Updated', `<b>Network:</b> ${primaryName}<br><b>Brand:</b> ${brand}<br><b>Aliases:</b> ${aliases.length > 0 ? aliases.join(', ') : 'None'}<br>⚠️ Lock rank update failed`, false, false, 3000);
             } catch (e) {
-              Logger.warn('WazeWrap.Alerts.warning failed:', e);
+              Logger.warn('WazeToastr.Alerts.warning failed:', e);
             }
           }
         }, RETRY_INJECTION_DELAY * 3);
@@ -2794,17 +2800,17 @@ https: (function () {
         }
 
         try {
-          WazeWrap.Alerts.success('Charging Station Updated', `<b>Network:</b> ${primaryName}<br><b>Brand:</b> ${brand}<br><b>Aliases:</b> ${aliases.length > 0 ? aliases.join(', ') : 'None'}${lockMessage}${additionalInfo}`, false, false, 4000);
+          WazeToastr.Alerts.success('Charging Station Updated', `<b>Network:</b> ${primaryName}<br><b>Brand:</b> ${brand}<br><b>Aliases:</b> ${aliases.length > 0 ? aliases.join(', ') : 'None'}${lockMessage}${additionalInfo}`, false, false, 4000);
         } catch (e) {
-          Logger.warn('WazeWrap.Alerts.success failed:', e);
+          Logger.warn('WazeToastr.Alerts.success failed:', e);
         }
       }
     } catch (error) {
       Logger.error('[Charging Station] Error updating:', error);
       try {
-        WazeWrap.Alerts.error('Charging Station Error', `Failed to update to ${primaryName}`, false, false, 3000);
+        WazeToastr.Alerts.error('Charging Station Error', `Failed to update to ${primaryName}`, false, false, 3000);
       } catch (e) {
-        Logger.warn('WazeWrap.Alerts.error failed:', e);
+        Logger.warn('WazeToastr.Alerts.error failed:', e);
       }
     }
   }
@@ -2873,7 +2879,7 @@ https: (function () {
           try {
             wmeSDK.DataModel.Venues.updateVenue({ venueId: venueId, lockRank: lockRank });
             Logger.info(`[Gas Station] Lock rank updated to ${lockRank}`);
-            WazeWrap.Alerts.success(
+            WazeToastr.Alerts.success(
               'Gas Station Updated',
               `<b>Brand:</b> ${primaryName}<br><b>Company:</b> ${brand}<br><b>Aliases:</b> ${aliases.length > 0 ? aliases.join(', ') : 'None'}<br><b>Lock Rank:</b> ${venue.lockRank + 1} → ${lockRank + 1}`,
               false,
@@ -2882,16 +2888,16 @@ https: (function () {
             );
           } catch (err) {
             Logger.warn('[Gas Station] Lock rank update failed:', err);
-            WazeWrap.Alerts.warning('Gas Station Updated', `<b>Brand:</b> ${primaryName}<br><b>Company:</b> ${brand}<br><b>Aliases:</b> ${aliases.length > 0 ? aliases.join(', ') : 'None'}<br>⚠️ Lock rank update failed`, false, false, 3000);
+            WazeToastr.Alerts.warning('Gas Station Updated', `<b>Brand:</b> ${primaryName}<br><b>Company:</b> ${brand}<br><b>Aliases:</b> ${aliases.length > 0 ? aliases.join(', ') : 'None'}<br>⚠️ Lock rank update failed`, false, false, 3000);
           }
         }, RETRY_INJECTION_DELAY * 3);
       } else {
         const lockMessage = lockRank !== undefined && lockRank !== null ? `<br><b>Lock Rank:</b> ${lockRank + 1} (unchanged)` : '';
-        WazeWrap.Alerts.success('Gas Station Updated', `<b>Brand:</b> ${primaryName}<br><b>Company:</b> ${brand}<br><b>Aliases:</b> ${aliases.length > 0 ? aliases.join(', ') : 'None'}${lockMessage}`, false, false, 3000);
+        WazeToastr.Alerts.success('Gas Station Updated', `<b>Brand:</b> ${primaryName}<br><b>Company:</b> ${brand}<br><b>Aliases:</b> ${aliases.length > 0 ? aliases.join(', ') : 'None'}${lockMessage}`, false, false, 3000);
       }
     } catch (error) {
       Logger.error('[Gas Station] Error updating:', error);
-      WazeWrap.Alerts.error('Gas Station Error', `Failed to update to ${primaryName}`, false, false, 3000);
+      WazeToastr.Alerts.error('Gas Station Error', `Failed to update to ${primaryName}`, false, false, 3000);
     }
   }
 
@@ -3079,18 +3085,23 @@ https: (function () {
   }
 
   function scriptupdatemonitor() {
-    if (WazeWrap?.Ready) {
-      bootstrap({ scriptUpdateMonitor: { downloadUrl } });
-      WazeWrap.Interface.ShowScriptUpdate(scriptName, scriptVersion, updateMessage, downloadUrl, forumURL);
+    if (WazeToastr?.Ready) {
+      // Create and start the ScriptUpdateMonitor
+      const updateMonitor = new WazeToastr.Alerts.ScriptUpdateMonitor(scriptName, scriptVersion, downloadUrl, GM_xmlhttpRequest);
+      updateMonitor.start(2, true); // Check every 2 hours, check immediately
+
+      // Show the update dialog for the current version
+      WazeToastr.Interface.ShowScriptUpdate(scriptName, scriptVersion, updateMessage, downloadUrl, forumURL);
     } else {
-      setTimeout(scriptupdatemonitor, SCRIPT_UPDATE_MONITOR_DELAY);
+      setTimeout(scriptupdatemonitor, 250);
     }
   }
-  // Start the "scriptupdatemonitor"
   scriptupdatemonitor();
   Logger.info(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
+  2025.12.27.01
+  - Temporary fix for alerts not displaying properly.
   2025.11.25.02
         <strong>Charging Station Automation:</strong><br>
       • Automatically sets network, cost type, and payment methods<br>
@@ -3107,7 +3118,7 @@ https: (function () {
   2025.11.12.01
  - Added ElectriVa charging station brand button for Nepal with aliases, 24/7 hours.
   2025.09.24.02
- - Enhanced NOC Button for Nepal Gas Stations with Wazewrap alert:</b><br>
+ - Enhanced NOC Button for Nepal Gas Stations with WazeToastr alert:</b><br>
     • <b>Case 1:</b> Empty gas station → Sets "NOC" as primary name<br>
     • <b>Case 2:</b> "NOC" primary with aliases → Prioritizes English aliases over Nepali<br>
     • <b>Case 3:</b> Non-NOC primary → Adds "NOC" as alias<br>
