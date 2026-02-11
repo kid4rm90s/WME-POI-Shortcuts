@@ -11,7 +11,7 @@
 // @grant           GM_addElement
 // @require         https://greasyfork.org/scripts/560385/code/WazeToastr.js
 // @require         https://greasyfork.org/scripts/523706-google-link-enhancer/code/Link%20Enhancer.js
-// @require         https://cdn.jsdelivr.net/gh/TheEditorX/wme-sdk-plus@latest/wme-sdk-plus.js
+// @require         https://cdn.jsdelivr.net/gh/TheEditorX/wme-sdk-plus@4527424b5d6768c0621b0af799cae3b30ee19bb7/wme-sdk-plus.js
 // ==/UserScript==
 
 /* global WazeToastr */
