@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2026.01.22.01
+// @version         2026.02.11.00
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -11,16 +11,17 @@
 // @grant           GM_addElement
 // @require         https://greasyfork.org/scripts/560385/code/WazeToastr.js
 // @require         https://greasyfork.org/scripts/523706-google-link-enhancer/code/Link%20Enhancer.js
+// @require         https://cdn.jsdelivr.net/gh/TheEditorX/wme-sdk-plus@4527424b5d6768c0621b0af799cae3b30ee19bb7/wme-sdk-plus.js
 // ==/UserScript==
 
 /* global WazeToastr */
 /* global bootstrap */
 
-https: (function () {
+(function () {
   ('use strict');
 
   const updateMessage = `
-      <strong>Fixed :</strong><br> - Added Indian Petrol Stations<br> - Added Nepal Petrol station and charging station brands button names<br>- Minor bug fixes<br>
+      <strong>Fixed :</strong><br> - Added support for auto applying school names and speed limits for schoolzones using wmesdkplus<br> - Minor bug fixes<br>
   `;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
@@ -418,6 +419,7 @@ https: (function () {
   let gleEnabled = false;
   let gleShowTempClosed = true;
   let openEditAddressOnRPP = false;
+  let schoolZoneSpeedLimit = 30;
   try {
     gleEnabled = JSON.parse(localStorage.getItem('wme-poi-shortcuts-gle-enabled'));
   } catch (e) {
@@ -432,6 +434,14 @@ https: (function () {
     openEditAddressOnRPP = JSON.parse(localStorage.getItem('wme-poi-shortcuts-open-edit-address-rpp'));
   } catch (e) {
     openEditAddressOnRPP = false;
+  }
+  try {
+    const storedSpeedLimit = parseInt(localStorage.getItem('wme-poi-shortcuts-school-zone-speed-limit'), 10);
+    if (!isNaN(storedSpeedLimit) && storedSpeedLimit > 0) {
+      schoolZoneSpeedLimit = storedSpeedLimit;
+    }
+  } catch (e) {
+    schoolZoneSpeedLimit = 30;
   }
   let GLE = {
     enabled: gleEnabled,
@@ -474,9 +484,12 @@ https: (function () {
     }
   }
 
-  function initScript() {
+  async function initScript() {
     // initialize the sdk with your script id and script name
-    const wmeSDK = typeof unsafeWindow !== 'undefined' && unsafeWindow.getWmeSdk ? unsafeWindow.getWmeSdk({ scriptId: 'wme-poi', scriptName: 'WME POI' }) : getWmeSdk({ scriptId: 'wme-poi', scriptName: 'WME POI' });
+    const wmeSdk = typeof unsafeWindow !== 'undefined' && unsafeWindow.getWmeSdk ? unsafeWindow.getWmeSdk({ scriptId: 'wme-poi', scriptName: 'WME POI' }) : getWmeSdk({ scriptId: 'wme-poi', scriptName: 'WME POI' });
+    const sdkPlus = await initWmeSdkPlus(wmeSdk);
+    wmeSDK = sdkPlus || wmeSdk;
+    console.log(`${scriptName} SDK+ initialized successfully`);
 
     // Store the original GLE config
     const gleConfig = {
@@ -744,6 +757,10 @@ https: (function () {
       <label style="font-size:10px; font-weight:bold; margin-top:4px; display:inline-block;">
         <input type="checkbox" id="_cbOpenEditAddressRPP" ${openEditAddressOnRPP ? 'checked' : ''} /> Open edit address when RPP selected
       </label>
+      <br>
+      <label style="font-size:10px; font-weight:bold; margin-top:4px; display:inline-block;">
+        School Zone SL: <input type="number" id="_inputSchoolZoneSpeedLimit" value="${schoolZoneSpeedLimit}" min="1" max="100" style="width:50px; margin-left:4px;" />
+      </label>
     </div>`;
     html += `<div style='font-size:10px;color:#888;margin-top:8px;'>You can bind keyboard shortcuts using WME's native shortcuts section.</div>`;
     setTimeout(() => {
@@ -883,7 +900,85 @@ https: (function () {
 
     wmeSDK.Shortcuts.createShortcut({
       callback: () => {
-        $("wz-icon[name='school-zone']").parent().trigger('click');
+        // OLD DOM manipulation approach (replaced with SDK+):
+        // $("wz-icon[name='school-zone']").parent().trigger('click');
+        
+        // NEW: Use SDK+ to draw polygon and create school zone
+        wmeSDK.Map.drawPolygon().then((geometry) => {
+          try {
+            // Find nearest school POI to name the school zone
+            let schoolName = '';
+            try {
+              const allVenues = wmeSDK.DataModel.Venues.getAll();
+              const schools = allVenues.filter(venue => 
+                venue.categories && venue.categories.includes('SCHOOL')
+              );
+              
+              if (schools.length > 0 && geometry.coordinates && geometry.coordinates[0]) {
+                // Calculate centroid of the polygon
+                const coords = geometry.coordinates[0];
+                let sumLon = 0, sumLat = 0, count = coords.length - 1;
+                for (let i = 0; i < count; i++) {
+                  sumLon += coords[i][0];
+                  sumLat += coords[i][1];
+                }
+                const centerLon = sumLon / count;
+                const centerLat = sumLat / count;
+                
+                // Find nearest school
+                let nearestSchool = null;
+                let minDistance = Infinity;
+                
+                schools.forEach(school => {
+                  let schoolLon, schoolLat;
+                  if (school.geometry.type === 'Point') {
+                    schoolLon = school.geometry.coordinates[0];
+                    schoolLat = school.geometry.coordinates[1];
+                  } else if (school.geometry.type === 'Polygon' && school.geometry.coordinates[0]) {
+                    const schoolCoords = school.geometry.coordinates[0];
+                    let sLon = 0, sLat = 0, sCount = schoolCoords.length - 1;
+                    for (let i = 0; i < sCount; i++) {
+                      sLon += schoolCoords[i][0];
+                      sLat += schoolCoords[i][1];
+                    }
+                    schoolLon = sLon / sCount;
+                    schoolLat = sLat / sCount;
+                  }
+                  
+                  if (schoolLon !== undefined && schoolLat !== undefined) {
+                    const distance = Math.sqrt(
+                      Math.pow(schoolLon - centerLon, 2) + Math.pow(schoolLat - centerLat, 2)
+                    );
+                    
+                    if (distance < minDistance) {
+                      minDistance = distance;
+                      nearestSchool = school;
+                    }
+                  }
+                });
+                
+                if (nearestSchool && nearestSchool.name && nearestSchool.name.trim()) {
+                  schoolName = nearestSchool.name.trim();
+                  Logger.info(`Found nearby school: ${schoolName}`);
+                }
+              }
+            } catch (schoolSearchError) {
+              Logger.warn('Error finding nearby school:', schoolSearchError);
+            }
+            
+            const schoolZoneId = wmeSDK.DataModel.PermanentHazards.addSchoolZone({
+              geometry: geometry,
+              name: schoolName,
+              speedLimit: schoolZoneSpeedLimit,
+              excludedRoadTypes: [1, 2]
+            });
+            Logger.info('School zone created with ID:', schoolZoneId);
+          } catch (error) {
+            Logger.error('Failed to create school zone:', error);
+          }
+        }).catch((error) => {
+          Logger.warn('User cancelled school zone drawing or error occurred:', error);
+        });
       },
       description: 'Create School Zone',
       shortcutId: 'create-school-zone',
@@ -1024,11 +1119,108 @@ https: (function () {
         func: function (ev) {
           ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_school_zone', () => {
             try {
-              WazeToastr.Alerts.info('POI Shortcut', `POI Type: <b>School Zone</b>`, false, false, 2000);
+              WazeToastr.Alerts.info('POI Shortcut', `Draw the <b>School Zone</b> area on the map`, false, false, 3000);
             } catch (e) {
               Logger.warn('WazeToastr.Alerts.info failed:', e);
             }
-            $("wz-icon[name='school-zone']").parent().trigger('click');
+            
+            // OLD DOM manipulation approach (replaced with SDK+):
+            // $("wz-icon[name='school-zone']").parent().trigger('click');
+            
+            // NEW: Use SDK+ to draw polygon and create school zone
+            wmeSDK.Map.drawPolygon().then((geometry) => {
+              try {
+                // Find nearest school POI to name the school zone
+                let schoolName = '';
+                try {
+                  const allVenues = wmeSDK.DataModel.Venues.getAll();
+                    const schools = allVenues.filter(venue => 
+                    venue.categories && venue.categories.some(cat => cat === 'SCHOOL' || cat === 'COLLEGE_UNIVERSITY')
+                    );
+                  
+                  if (schools.length > 0 && geometry.coordinates && geometry.coordinates[0]) {
+                    // Calculate centroid of the polygon
+                    const coords = geometry.coordinates[0];
+                    let sumLon = 0, sumLat = 0, count = coords.length - 1; // -1 to exclude closing point
+                    for (let i = 0; i < count; i++) {
+                      sumLon += coords[i][0];
+                      sumLat += coords[i][1];
+                    }
+                    const centerLon = sumLon / count;
+                    const centerLat = sumLat / count;
+                    
+                    // Find nearest school
+                    let nearestSchool = null;
+                    let minDistance = Infinity;
+                    
+                    schools.forEach(school => {
+                      let schoolLon, schoolLat;
+                      if (school.geometry.type === 'Point') {
+                        schoolLon = school.geometry.coordinates[0];
+                        schoolLat = school.geometry.coordinates[1];
+                      } else if (school.geometry.type === 'Polygon' && school.geometry.coordinates[0]) {
+                        // Calculate centroid of school polygon
+                        const schoolCoords = school.geometry.coordinates[0];
+                        let sLon = 0, sLat = 0, sCount = schoolCoords.length - 1;
+                        for (let i = 0; i < sCount; i++) {
+                          sLon += schoolCoords[i][0];
+                          sLat += schoolCoords[i][1];
+                        }
+                        schoolLon = sLon / sCount;
+                        schoolLat = sLat / sCount;
+                      }
+                      
+                      if (schoolLon !== undefined && schoolLat !== undefined) {
+                        // Simple Euclidean distance (good enough for nearby POIs)
+                        const distance = Math.sqrt(
+                          Math.pow(schoolLon - centerLon, 2) + Math.pow(schoolLat - centerLat, 2)
+                        );
+                        
+                        if (distance < minDistance) {
+                          minDistance = distance;
+                          nearestSchool = school;
+                        }
+                      }
+                    });
+                    
+                    // Use the school name if found and not empty
+                    if (nearestSchool && nearestSchool.name && nearestSchool.name.trim()) {
+                      schoolName = nearestSchool.name.trim();
+                      Logger.info(`Found nearby school: ${schoolName}`);
+                    }
+                  }
+                } catch (schoolSearchError) {
+                  Logger.warn('Error finding nearby school:', schoolSearchError);
+                }
+                
+                const schoolZoneId = wmeSDK.DataModel.PermanentHazards.addSchoolZone({
+                  geometry: geometry,
+                  name: schoolName, // Use found school name or empty string
+                  speedLimit: schoolZoneSpeedLimit,
+                  excludedRoadTypes: [ ] // add here any road types to exclude for example, [1,2] to exclude highways and primary roads
+                });
+                
+                Logger.info('School zone created with ID:', schoolZoneId);
+                
+                try {
+                  const successMsg = schoolName 
+                    ? `<b>School Zone</b> created: ${schoolName} with speed limit ${schoolZoneSpeedLimit} km/h` 
+                    : `<b>School Zone</b> created successfully`;
+                  WazeToastr.Alerts.success('POI Shortcut', successMsg, false, false, 2500);
+                } catch (e) {
+                  Logger.warn('WazeToastr.Alerts.success failed:', e);
+                }
+              } catch (error) {
+                Logger.error('Failed to create school zone:', error);
+                try {
+                  WazeToastr.Alerts.error('POI Shortcut', `Failed to create <b>School Zone</b>: ${error.message}`, false, false, 3000);
+                } catch (e) {
+                  Logger.warn('WazeToastr.Alerts.error failed:', e);
+                }
+              }
+            }).catch((error) => {
+              Logger.warn('User cancelled school zone drawing or error occurred:', error);
+            });
           });
         },
         key: -1, // No default key, user can set custom
@@ -3121,6 +3313,25 @@ https: (function () {
             Logger.info(`Open edit address on RPP setting ${this.checked ? 'enabled' : 'disabled'}`);
           });
         }
+
+        // Add event listener for School Zone Speed Limit input
+        const inputSchoolZoneSpeedLimit = document.getElementById('_inputSchoolZoneSpeedLimit');
+        if (inputSchoolZoneSpeedLimit) {
+          // Restore value from localStorage
+          inputSchoolZoneSpeedLimit.value = schoolZoneSpeedLimit;
+          inputSchoolZoneSpeedLimit.addEventListener('change', function () {
+            const newLimit = parseInt(this.value, 10);
+            if (!isNaN(newLimit) && newLimit > 0 && newLimit <= 100) {
+              schoolZoneSpeedLimit = newLimit;
+              localStorage.setItem('wme-poi-shortcuts-school-zone-speed-limit', newLimit.toString());
+              Logger.info(`School zone speed limit set to ${newLimit}`);
+            } else {
+              // Restore previous valid value if invalid input
+              this.value = schoolZoneSpeedLimit;
+              Logger.warn('Invalid school zone speed limit. Must be between 1 and 100.');
+            }
+          });
+        }
       }, 0);
     } catch (e) {
       console.error('Failed to register POI Shortcuts script tab:', e);
@@ -3143,6 +3354,9 @@ https: (function () {
   Logger.info(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
+    2026.02.11.01
+    - Added support for auto applying school names and speed limits for schoolzones using wmesdkplus
+    - Minor bug fixes
     2026.01.22.01
     - Added Indian Petrol Stations
     - Added Nepal Petrol station and charging station brands button names
