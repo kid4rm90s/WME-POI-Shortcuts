@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2026.02.11.00
+// @version         2026.02.17.00
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -14,14 +14,13 @@
 // @require         https://cdn.jsdelivr.net/gh/TheEditorX/wme-sdk-plus@4527424b5d6768c0621b0af799cae3b30ee19bb7/wme-sdk-plus.js
 // ==/UserScript==
 
-/* global WazeToastr */
-/* global bootstrap */
+/* global WazeToastr, wmeSdkPlus */
 
 (function () {
   ('use strict');
 
   const updateMessage = `
-      <strong>Fixed :</strong><br> - Added support for auto applying school names and speed limits for schoolzones using wmesdkplus<br> - Minor bug fixes<br>
+      <strong>Fixed :</strong><br>  -🪲 Minor bug fixes<br>
   `;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
@@ -2518,11 +2517,12 @@
 
         if ($actionsContainer.length === 0) return true; // Continue to next iteration
 
-        // Remove unwanted "To Name" button from other scripts
+        // Remove unwanted "To Name" button from other script such as WME Place Interface Enhancement
         $actionsContainer
-          .find('div.makePrimary.alias-item-action')
+          .find('div.makePrimary.alias-item-action, div.make-primary-venue-button')
           .filter(function () {
-            return $(this).text().trim() === 'To Name';
+            const text = $(this).text().trim();
+            return text === 'To Name' || text === 'Make primary';
           })
           .remove();
 
