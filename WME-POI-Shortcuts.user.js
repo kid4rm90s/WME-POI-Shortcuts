@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2026.02.17.00
+// @version         2026.04.13.00
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -2519,7 +2519,7 @@
 
         // Remove unwanted "To Name" button from other script such as WME Place Interface Enhancement
         $actionsContainer
-          .find('div.makePrimary.alias-item-action, div.make-primary-venue-button')
+          .find('wz-button.makePrimary.alias-item-action, div.make-primary-venue-button')
           .filter(function () {
             const text = $(this).text().trim();
             return text === 'To Name' || text === 'Make primary';
@@ -3354,6 +3354,8 @@
   Logger.info(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
+  2026.04.13.00
+    - Updated from div.makePrimary.alias-item-action to div.makePrimary.alias-item-action-button for better compatibility PIE and to fix issues with WME PIE.
     2026.02.11.01
     - Added support for auto applying school names and speed limits for schoolzones using wmesdkplus
     - Minor bug fixes
