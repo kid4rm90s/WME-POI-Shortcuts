@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2026.04.13.00
+// @version         2026.04.15.00
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -11,8 +11,9 @@
 // @grant           GM_addElement
 // @require         https://greasyfork.org/scripts/560385/code/WazeToastr.js
 // @require         https://greasyfork.org/scripts/523706-google-link-enhancer/code/Link%20Enhancer.js
-// @require         https://cdn.jsdelivr.net/gh/TheEditorX/wme-sdk-plus@4527424b5d6768c0621b0af799cae3b30ee19bb7/wme-sdk-plus.js
+// @require         https://cdn.jsdelivr.net/gh/TheEditorX/wme-sdk-plus@72968ef0792a3bd673f768f8ee2a10d67653d1ea/wme-sdk-plus.js
 // ==/UserScript==
+
 
 /* global WazeToastr, wmeSdkPlus */
 
@@ -20,7 +21,7 @@
   ('use strict');
 
   const updateMessage = `
-      <strong>Fixed :</strong><br>  -🪲 Minor bug fixes<br>
+      <strong>Fixed :</strong><br>  - Updated commit hash for wme-sdk-plus which was preventing script from running correctly<br>
   `;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
@@ -3354,6 +3355,8 @@
   Logger.info(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
+  2026.06.15.01
+  - Fixed issue with wme-sdk-plus preventing loading the script. Updated the commit hash for wme-sdk-plus to the latest version.
   2026.04.13.00
     - Updated from div.makePrimary.alias-item-action to div.makePrimary.alias-item-action-button for better compatibility PIE and to fix issues with WME PIE.
     2026.02.11.01
