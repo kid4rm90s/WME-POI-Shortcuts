@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2026.04.15.00
+// @version         2026.04.19.001
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -9,19 +9,20 @@
 // @connect         greasyfork.org
 // @grant           GM_xmlhttpRequest
 // @grant           GM_addElement
+// @require         https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js
 // @require         https://greasyfork.org/scripts/560385/code/WazeToastr.js
-// @require         https://greasyfork.org/scripts/523706-google-link-enhancer/code/Link%20Enhancer.js
+// @require         https://greasyfork.org/scripts/523706/code/Link%20Enhancer.js
 // @require         https://cdn.jsdelivr.net/gh/TheEditorX/wme-sdk-plus@72968ef0792a3bd673f768f8ee2a10d67653d1ea/wme-sdk-plus.js
 // ==/UserScript==
 
 
-/* global WazeToastr, wmeSdkPlus */
+/* global WazeToastr, wmeSdkPlus, GoogleLinkEnhancer */
 
 (function () {
   ('use strict');
 
   const updateMessage = `
-      <strong>Fixed :</strong><br>  - Updated commit hash for wme-sdk-plus which was preventing script from running correctly<br>
+      <strong>NEW :</strong><br>  - now it uses sdk version of link enhancer!<br>
   `;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
@@ -491,35 +492,47 @@
     wmeSDK = sdkPlus || wmeSdk;
     console.log(`${scriptName} SDK+ initialized successfully`);
 
-    // Store the original GLE config
-    const gleConfig = {
-      enabled: GLE.enabled,
-      showTempClosedPOIs: GLE.showTempClosedPOIs,
-      closedPlace: GLE.closedPlace,
-      multiLinked: GLE.multiLinked,
-      linkedToThisPlace: GLE.linkedToThisPlace,
-      linkedNearby: GLE.linkedNearby,
-      linkedToXPlaces: GLE.linkedToXPlaces,
-      badLink: GLE.badLink,
-      tooFar: GLE.tooFar,
-    };
+    // Check if GoogleLinkEnhancer is loaded and initialize if available
+    if (typeof GoogleLinkEnhancer !== 'undefined') {
+      // Store the original GLE config
+      const gleConfig = {
+        enabled: GLE.enabled,
+        showTempClosedPOIs: GLE.showTempClosedPOIs,
+        permClosedPlace: GLE.closedPlace,
+        tempClosedPlace: 'Google indicates this place is temporarily closed.',
+        multiLinked: GLE.multiLinked,
+        linkedToThisPlace: GLE.linkedToThisPlace,
+        linkedNearby: GLE.linkedNearby,
+        linkedToXPlaces: GLE.linkedToXPlaces,
+        badLink: GLE.badLink,
+        tooFar: GLE.tooFar,
+      };
 
-    GLE = new GoogleLinkEnhancer();
+      try {
+        GLE = new GoogleLinkEnhancer(wmeSdk, turf);
 
-    //***** Set Google Link Enhancer strings *****
-    GLE.strings.closedPlace = gleConfig.closedPlace;
-    GLE.strings.multiLinked = gleConfig.multiLinked;
-    GLE.strings.linkedToThisPlace = gleConfig.linkedToThisPlace;
-    GLE.strings.linkedNearby = gleConfig.linkedNearby;
-    GLE.strings.linkedToXPlaces = gleConfig.linkedToXPlaces;
-    GLE.strings.badLink = gleConfig.badLink;
-    GLE.strings.tooFar = gleConfig.tooFar;
+        //***** Set Google Link Enhancer strings *****
+        GLE.strings.permClosedPlace = gleConfig.permClosedPlace;
+        GLE.strings.tempClosedPlace = gleConfig.tempClosedPlace;
+        GLE.strings.multiLinked = gleConfig.multiLinked;
+        GLE.strings.linkedToThisPlace = gleConfig.linkedToThisPlace;
+        GLE.strings.linkedNearby = gleConfig.linkedNearby;
+        GLE.strings.linkedToXPlaces = gleConfig.linkedToXPlaces;
+        GLE.strings.badLink = gleConfig.badLink;
+        GLE.strings.tooFar = gleConfig.tooFar;
 
-    // Apply the config to the GoogleLinkEnhancer instance AFTER strings are set
-    GLE.showTempClosedPOIs = gleConfig.showTempClosedPOIs;
+        // Apply the config to the GoogleLinkEnhancer instance AFTER strings are set
+        GLE.showTempClosedPOIs = gleConfig.showTempClosedPOIs;
 
-    if (gleConfig.enabled) {
-      GLE.enable();
+        if (gleConfig.enabled) {
+          GLE.enable();
+        }
+      } catch (gleError) {
+        console.error('[WME POI Shortcuts] Error initializing GoogleLinkEnhancer:', gleError);
+        GLE = null;
+      }
+    } else {
+      console.warn('[WME POI Shortcuts] GoogleLinkEnhancer library failed to load. Link validation features will be unavailable.');
     }
     // query the WME data model
     // Example: Get the currently selected segment if available
@@ -3355,6 +3368,8 @@
   Logger.info(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
+  2026.06.19.01
+  - Now it uses the SDK version of link Enhancer!
   2026.06.15.01
   - Fixed issue with wme-sdk-plus preventing loading the script. Updated the commit hash for wme-sdk-plus to the latest version.
   2026.04.13.00
