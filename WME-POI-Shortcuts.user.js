@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2026.04.19.001
+// @version         2026.05.15.001
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -22,7 +22,7 @@
   ('use strict');
 
   const updateMessage = `
-      <strong>NEW :</strong><br>  - now it uses sdk version of link enhancer!<br>
+      <strong>NEW :</strong><br>  - Default speed limit for school zones set to 20 km/h!<br>
   `;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
@@ -420,7 +420,7 @@
   let gleEnabled = false;
   let gleShowTempClosed = true;
   let openEditAddressOnRPP = false;
-  let schoolZoneSpeedLimit = 30;
+  let schoolZoneSpeedLimit = 20; // Default speed limit for school zones, can be customized in settings
   try {
     gleEnabled = JSON.parse(localStorage.getItem('wme-poi-shortcuts-gle-enabled'));
   } catch (e) {
@@ -442,7 +442,7 @@
       schoolZoneSpeedLimit = storedSpeedLimit;
     }
   } catch (e) {
-    schoolZoneSpeedLimit = 30;
+    schoolZoneSpeedLimit = 20; // Default school zone speed limit if parsing fails
   }
   let GLE = {
     enabled: gleEnabled,
