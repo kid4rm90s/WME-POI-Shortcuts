@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2026.05.19.001
+// @version         2026.05.19.002
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -386,14 +386,14 @@
     observedAliasItems.clear();
     nameInputObserved = false;
   }
-
-  if (typeof unsafeWindow !== 'undefined' && unsafeWindow.SDK_INITIALIZED) {
-    unsafeWindow.SDK_INITIALIZED.then(initScript);
-  } else if (typeof window.SDK_INITIALIZED !== 'undefined') {
-    window.SDK_INITIALIZED.then(initScript);
-  } else {
-    Logger.error('WME SDK is not available. Script will not run.');
-  }
+  unsafeWindow.SDK_INITIALIZED.then(initScript);
+  // if (typeof unsafeWindow !== 'undefined' && unsafeWindow.SDK_INITIALIZED) {
+  //   unsafeWindow.SDK_INITIALIZED.then(initScript);
+  // } else if (typeof window.SDK_INITIALIZED !== 'undefined') {
+  //   window.SDK_INITIALIZED.then(initScript);
+  // } else {
+  //   Logger.error('WME SDK is not available. Script will not run.');
+  // }
 
   // Inject custom CSS for grayed out disabled options
   injectCSSWithID('poiDisabledOptionStyle', `select[id^='poiItem'] option:disabled { color: #bbb !important; background: #000000ff !important; }`);
@@ -494,7 +494,7 @@
 
   async function initScript() {
     // initialize the sdk with your script id and script name
-    const wmeSdk = typeof unsafeWindow !== 'undefined' && unsafeWindow.getWmeSdk ? unsafeWindow.getWmeSdk({ scriptId: 'wme-poi', scriptName: 'WME POI' }) : getWmeSdk({ scriptId: 'wme-poi', scriptName: 'WME POI' });
+    const wmeSdk = await getWmeSdk({ scriptId: 'wme-poi', scriptName: 'WME POI' });
     const sdkPlus = await initWmeSdkPlus(wmeSdk);
     wmeSDK = sdkPlus || wmeSdk;
     console.log(`${scriptName} SDK+ initialized successfully`);
