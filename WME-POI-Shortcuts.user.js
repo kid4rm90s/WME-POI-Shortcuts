@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2026.05.19.002
+// @version         2026.05.19.003
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -11,6 +11,7 @@
 // @grant           GM_addElement
 // @grant           unsafeWindow
 // @grant           GM_info
+// @run-at          document-end
 // @require         https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js
 // @require         https://greasyfork.org/scripts/560385/code/WazeToastr.js
 // @require         https://greasyfork.org/scripts/523706/code/Link%20Enhancer.js
@@ -29,7 +30,8 @@
       - Pedestrian Crossing<br><br>
       - Narrow Bridge<br><br>
       - Lane End (abrupt)<br><br>
-      - Shoulder End (abrupt)<br>
+      - Shoulder End (abrupt)<br><br>
+    And minor bug fixes.<br><br>
   `;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
@@ -386,7 +388,10 @@
     observedAliasItems.clear();
     nameInputObserved = false;
   }
-  unsafeWindow.SDK_INITIALIZED.then(initScript);
+  
+  unsafeWindow.SDK_INITIALIZED.then(initScript).catch(err =>
+    console.error(`[${scriptName}] Initialization failed:`, err)
+  );
   // if (typeof unsafeWindow !== 'undefined' && unsafeWindow.SDK_INITIALIZED) {
   //   unsafeWindow.SDK_INITIALIZED.then(initScript);
   // } else if (typeof window.SDK_INITIALIZED !== 'undefined') {
@@ -498,6 +503,24 @@
     const sdkPlus = await initWmeSdkPlus(wmeSdk);
     wmeSDK = sdkPlus || wmeSdk;
     console.log(`${scriptName} SDK+ initialized successfully`);
+    
+    const onReady = () => {
+      // Setup custom shortcuts after WME is ready
+      setupShortcuts(wmeSDK);
+      // Register script sidebar tab for venue dropdown
+      registerSidebarScriptTab(wmeSDK);
+      // Check for initial venue selection and inject swap button if needed
+      setTimeout(() => {
+        debouncedInjectButtonStation(wmeSDK);
+        debouncedInjectSwapButton(wmeSDK);
+      }, 500); // Small delay to ensure UI is fully loaded
+    };
+
+    if (wmeSDK.State.isReady) {
+      onReady();
+    } else {
+      wmeSDK.Events.once({ eventName: 'wme-ready' }).then(onReady);
+    }
 
     // Check if GoogleLinkEnhancer is loaded and initialize if available
     if (typeof GoogleLinkEnhancer !== 'undefined') {
@@ -552,7 +575,8 @@
       }
     }
 
-    // register to events
+/*
+
     wmeSDK.Events.once({ eventName: 'wme-ready' }).then(() => {
       // Setup custom shortcuts after WME is ready
       setupShortcuts(wmeSDK);
@@ -563,7 +587,8 @@
         debouncedInjectButtonStation(wmeSDK);
         debouncedInjectSwapButton(wmeSDK);
       }, 500); // Small delay to ensure UI is fully loaded
-    });
+    });*/
+    // register to events
     wmeSDK.Events.on({
       eventName: 'wme-map-move',
       eventHandler: () => {
