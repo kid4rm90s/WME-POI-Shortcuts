@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2026.05.15.001
+// @version         2026.05.19.001
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -9,6 +9,8 @@
 // @connect         greasyfork.org
 // @grant           GM_xmlhttpRequest
 // @grant           GM_addElement
+// @grant           unsafeWindow
+// @grant           GM_info
 // @require         https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js
 // @require         https://greasyfork.org/scripts/560385/code/WazeToastr.js
 // @require         https://greasyfork.org/scripts/523706/code/Link%20Enhancer.js
@@ -22,7 +24,12 @@
   ('use strict');
 
   const updateMessage = `
-      <strong>NEW :</strong><br>  - Default speed limit for school zones set to 20 km/h!<br>
+      <strong>NEW :- Added keyboard shortcuts for latest Hazard types:</strong><br><br>
+      - Raised Pedestrian Crossing<br><br>
+      - Pedestrian Crossing<br><br>
+      - Narrow Bridge<br><br>
+      - Lane End (abrupt)<br><br>
+      - Shoulder End (abrupt)<br>
   `;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
@@ -1245,7 +1252,7 @@
         func: function (ev) {
           ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_dangerous_curve', () => {
             try {
-              WazeToastr.Alerts.info('POI Shortcut', `POI Type: <b>Sharp Curves</b>`, false, false, 2000);
+              WazeToastr.Alerts.info('POI Shortcut', `Hazard Type: <b>Sharp Curves</b>`, false, false, 2000);
             } catch (e) {
               Logger.warn('WazeToastr.Alerts.info failed:', e);
             }
@@ -1261,7 +1268,7 @@
         func: function (ev) {
           ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_dangerous_intersection', () => {
             try {
-              WazeToastr.Alerts.info('POI Shortcut', `POI Type: <b>Complex Junctions</b>`, false, false, 2000);
+              WazeToastr.Alerts.info('POI Shortcut', `Hazard Type: <b>Complex Junctions</b>`, false, false, 2000);
             } catch (e) {
               Logger.warn('WazeToastr.Alerts.info failed:', e);
             }
@@ -1277,11 +1284,91 @@
         func: function (ev) {
           ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_dangerous_merge', () => {
             try {
-              WazeToastr.Alerts.info('POI Shortcut', `POI Type: <b>Multiple Lanes Merging</b>`, false, false, 2000);
+              WazeToastr.Alerts.info('POI Shortcut', `Hazard Type: <b>Multiple Lanes Merging</b>`, false, false, 2000);
             } catch (e) {
               Logger.warn('WazeToastr.Alerts.info failed:', e);
             }
             $("wz-icon[name='merge-ahead']").parent().trigger('click');
+          });
+        },
+        key: -1, // No default key, user can set custom
+        arg: {},
+      },
+      {
+        handler: 'WME-POI-Shortcuts_raised-crosswalk',
+        title: 'Create Raised Pedestrian Crossing',
+        func: function (ev) {
+          ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_raised_crosswalk', () => {
+            try {
+              WazeToastr.Alerts.info('POI Shortcut', `Hazard Type: <b>Raised Pedestrian Crossing</b>`, false, false, 2000);
+            } catch (e) {
+              Logger.warn('WazeToastr.Alerts.info failed:', e);
+            }
+            $("wz-icon[name='raised-crosswalk']").parent().trigger('click');
+          });
+        },
+        key: -1, // No default key, user can set custom
+        arg: {},
+      },
+      {
+        handler: 'WME-POI-Shortcuts_highway-crosswalk',
+        title: 'Create Pedestrian Crossing',
+        func: function (ev) {
+          ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_highway_crosswalk', () => {
+            try {
+              WazeToastr.Alerts.info('POI Shortcut', `Hazard Type: <b>Pedestrian Crossing</b>`, false, false, 2000);
+            } catch (e) {
+              Logger.warn('WazeToastr.Alerts.info failed:', e);
+            }
+            $("wz-icon[name='highway-crosswalk']").parent().trigger('click');
+          });
+        },
+        key: -1, // No default key, user can set custom
+        arg: {},
+      },
+      {
+        handler: 'WME-POI-Shortcuts_narrow-bridge',
+        title: 'Create Narrow Bridge',
+        func: function (ev) {
+          ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_narrow_bridge', () => {
+            try {
+              WazeToastr.Alerts.info('POI Shortcut', `Hazard Type: <b>Narrow Bridge</b>`, false, false, 2000);
+            } catch (e) {
+              Logger.warn('WazeToastr.Alerts.info failed:', e);
+            }
+            $("wz-icon[name='narrow-bridge']").parent().trigger('click');
+          });
+        },
+        key: -1, // No default key, user can set custom
+        arg: {},
+      },
+      {
+        handler: 'WME-POI-Shortcuts_right-lane-ending',
+        title: 'Create Lane End (abrupt)',
+        func: function (ev) {
+          ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_right_lane_ending', () => {
+            try {
+              WazeToastr.Alerts.info('POI Shortcut', `Hazard Type: <b>Lane End (abrupt)</b>`, false, false, 2000);
+            } catch (e) {
+              Logger.warn('WazeToastr.Alerts.info failed:', e);
+            }
+            $("wz-icon[name='right-lane-ending']").parent().trigger('click');
+          });
+        },
+        key: -1, // No default key, user can set custom
+        arg: {},
+      },
+      {
+        handler: 'WME-POI-Shortcuts_right-shoulder-ending',
+        title: 'Create Shoulder End (abrupt)',
+        func: function (ev) {
+          ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_right_shoulder_ending', () => {
+            try {
+              WazeToastr.Alerts.info('POI Shortcut', `Hazard Type: <b>Shoulder End (abrupt)</b>`, false, false, 2000);
+            } catch (e) {
+              Logger.warn('WazeToastr.Alerts.info failed:', e);
+            }
+            $("wz-icon[name='right-shoulder-ending']").parent().trigger('click');
           });
         },
         key: -1, // No default key, user can set custom
@@ -3368,6 +3455,13 @@
   Logger.info(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
+  2026.05.19.01
+  <strong>NEW :- Added keyboard shortcuts for latest Hazard types:</strong><br><br>
+  - Raised Pedestrian Crossing<br><br>
+  - Pedestrian Crossing<br><br>
+  - Narrow Bridge<br><br>
+  - Lane End (abrupt)<br><br>
+  - Shoulder End (abrupt)<br>
   2026.06.19.01
   - Now it uses the SDK version of link Enhancer!
   2026.06.15.01
