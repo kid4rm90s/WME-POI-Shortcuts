@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2026.05.22.002
+// @version         2026.06.27.001
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -26,10 +26,9 @@
   ('use strict');
 
   const updateMessage = `
-      <strong>NEW :- Added:</strong><br><br>
-      - EV Park Charging Station category<br>
-      - Pedestrian Crossing<br>
-      - Services category for easier access <br>
+      <strong>NEW :- Updated:</strong><br><br>
+      - Bug fix for Lane end PH<br>
+      - Bug fix for Shoulder end PH<br>
     And minor bug fixes.<br><br>
   `;
   const scriptName = GM_info.script.name;
@@ -1495,32 +1494,32 @@
         arg: {},
       },
       {
-        handler: 'WME-POI-Shortcuts_right-lane-ending',
+        handler: 'WME-POI-Shortcuts_both-lanes-ending',
         title: 'Create Lane End (abrupt)',
         func: function (ev) {
-          ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_right_lane_ending', () => {
+          ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_lane_ending', () => {
             try {
               WazeToastr.Alerts.info('POI Shortcut', `Hazard Type: <b>Lane End (abrupt)</b>`, false, false, 2000);
             } catch (e) {
               Logger.warn('WazeToastr.Alerts.info failed:', e);
             }
-            $("wz-icon[name='right-lane-ending']").parent().trigger('click');
+            $("wz-icon[name='both-lanes-ending']").parent().trigger('click');
           });
         },
         key: -1, // No default key, user can set custom
         arg: {},
       },
       {
-        handler: 'WME-POI-Shortcuts_right-shoulder-ending',
+        handler: 'WME-POI-Shortcuts_both-shoulders-ending',
         title: 'Create Shoulder End (abrupt)',
         func: function (ev) {
-          ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_right_shoulder_ending', () => {
+          ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_shoulder_ending', () => {
             try {
               WazeToastr.Alerts.info('POI Shortcut', `Hazard Type: <b>Shoulder End (abrupt)</b>`, false, false, 2000);
             } catch (e) {
               Logger.warn('WazeToastr.Alerts.info failed:', e);
             }
-            $("wz-icon[name='right-shoulder-ending']").parent().trigger('click');
+            $("wz-icon[name='both-shoulders-ending']").parent().trigger('click');
           });
         },
         key: -1, // No default key, user can set custom
@@ -3740,6 +3739,10 @@
   Logger.info(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
+  2026.06.27.01
+      - Bug fix for Lane end PH<br>
+      - Bug fix for Shoulder end PH<br>
+    And minor bug fixes.<br><br>
   2026.05.19.01
   <strong>NEW :- Added keyboard shortcuts for latest Hazard types:</strong><br><br>
   - Raised Pedestrian Crossing<br><br>
