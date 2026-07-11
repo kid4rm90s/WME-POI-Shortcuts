@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2026.06.27.001
+// @version         2026.07.11.001
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -27,8 +27,7 @@
 
   const updateMessage = `
       <strong>NEW :- Updated:</strong><br><br>
-      - Bug fix for Lane end PH<br>
-      - Bug fix for Shoulder end PH<br>
+      - Venue and subvenue categories now follow editor's locale<br>
     And minor bug fixes.<br><br>
   `;
   const scriptName = GM_info.script.name;
@@ -70,102 +69,22 @@
     Pakistan: {
       countryCode: 'PK',
       brandnames: [
-        {
-          primaryName: 'Askar 1',
-          brand: 'Askar 1',
-          aliases: ['Askar 1 Petrol Pump'],
-          website: 'askaroil.com.pk',
-        },
-        {
-          primaryName: 'Attock',
-          brand: 'Attock',
-          aliases: ['Attock Petrol Pump'],
-          website: 'apl.com.pk',
-        },
-        {
-          primaryName: 'Be Energy',
-          brand: 'BE Energy',
-          aliases: ['Be Petrol Pump'],
-          website: 'beenergy.com.pk',
-        },
-        {
-          primaryName: 'Byco',
-          brand: 'Byco',
-          aliases: ['Byco Petrol Pump'],
-          website: 'byco.com.pk',
-        },
-        {
-          primaryName: 'Caltex',
-          brand: 'Caltex',
-          aliases: ['Caltex Petrol Pump'],
-          website: 'caltex.com',
-        },
-        {
-          primaryName: 'Go',
-          brand: 'Go',
-          aliases: ['Go Petrol Pump'],
-          website: 'gno.com.pk',
-        },
-        {
-          primaryName: 'Hascol',
-          brand: 'Hascol',
-          aliases: [''],
-          website: 'hascol.com',
-        },
-        {
-          primaryName: 'LaGuardia',
-          brand: 'LaGuardia',
-          aliases: ['LaGuardia'],
-          website: 'laguardia-group.com',
-        },
-        {
-          primaryName: 'N3',
-          brand: 'N3',
-          aliases: ['N3 Petrol Pump'],
-          website: 'n3.com.pk',
-        },
-        {
-          primaryName: 'PSO',
-          brand: 'Pakistan State Oil',
-          aliases: ['PSO Petrol Pump', 'Pakistan State Oil'],
-          website: 'psopk.com',
-        },
-        {
-          primaryName: 'Puma Energy',
-          brand: 'Puma',
-          aliases: ['Puma'],
-          website: 'pumaenergy.com',
-        },
-        {
-          primaryName: 'Shell',
-          brand: 'Shell',
-          aliases: ['Shell'],
-          website: 'shell.com.pk',
-        },
-        {
-          primaryName: 'Taj Petroleum',
-          brand: 'TAJ',
-          aliases: ['Taj Petrol Pump'],
-          website: 'tajcorporation.com',
-        },
-        {
-          primaryName: 'Total Parco',
-          brand: 'TOTAL - PARCO',
-          aliases: ['Total Parco', 'Total', 'Total Petrol Pump'],
-          website: 'totalparco.com.pk',
-        },
-        {
-          primaryName: 'Zoom',
-          brand: 'Zoom',
-          aliases: ['Zoom Petroleum', 'Zoom Petrol Pump'],
-          website: 'zoom.org.pk',
-        },
-        {
-          primaryName: 'Target',
-          brand: null,
-          aliases: ['Target Petrol Pump'],
-          website: 'targetlubricants.com',
-        },
+        { buttonLabel: 'ASKAR', primaryName: 'Askar 1', brand: 'Askar 1', aliases: ['Askar 1 Petrol Pump'], website: 'askaroil.com.pk', },
+        { buttonLabel: 'ATTOCK', primaryName: 'Attock', brand: 'Attock', aliases: ['Attock Petrol Pump'], website: 'apl.com.pk', },
+        { buttonLabel: 'BE', primaryName: 'Be Energy', brand: 'BE Energy', aliases: ['Be Petrol Pump'], website: 'beenergy.com.pk',},
+        { buttonLabel: 'BYCO', primaryName: 'Byco', brand: 'Byco', aliases: ['Byco Petrol Pump'], website: 'byco.com.pk', },
+        { buttonLabel: 'CALTEX', primaryName: 'Caltex', brand: 'Caltex', aliases: ['Caltex Petrol Pump'], website: 'caltex.com', },
+        { buttonLabel: 'GO', primaryName: 'Go', brand: 'Go', aliases: ['Go Petrol Pump'], website: 'gno.com.pk', },
+        { buttonLabel: 'HASCOL', primaryName: 'Hascol', brand: 'Hascol', aliases: [''], website: 'hascol.com', },
+        { buttonLabel: 'LAGUARDIA', primaryName: 'LaGuardia', brand: 'LaGuardia', aliases: ['LaGuardia'], website: 'laguardia-group.com',},
+        { buttonLabel: 'N3', primaryName: 'N3', brand: 'N3', aliases: ['N3 Petrol Pump'], website: 'n3.com.pk', },
+        { buttonLabel: 'PSO', primaryName: 'Pakistan State Oil', brand: 'Pakistan State Oil', aliases: ['PSO Petrol Pump', 'Pakistan State Oil'], website: 'psopk.com', },
+        { buttonLabel: 'PUMA', primaryName: 'Puma Energy', brand: 'Puma', aliases: ['Puma'], website: 'pumaenergy.com', },
+        { buttonLabel: 'SHELL', primaryName: 'Shell', brand: 'Shell', aliases: ['Shell'], website: 'shell.com.pk', },
+        { buttonLabel: 'TAJ', primaryName: 'Taj Petroleum', brand: 'TAJ', aliases: ['Taj Petrol Pump'], website: 'tajcorporation.com', },
+        { buttonLabel: 'TOTAL', primaryName: 'Total Parco', brand: 'TOTAL - PARCO', aliases: ['Total Parco', 'Total', 'Total Petrol Pump'], website: 'totalparco.com.pk', },
+        { buttonLabel: 'ZOOM', primaryName: 'Zoom', brand: 'Zoom', aliases: ['Zoom Petroleum', 'Zoom Petrol Pump'], website: 'zoom.org.pk', },
+        { buttonLabel: 'TARGET', primaryName: 'Target', brand: null, aliases: ['Target Petrol Pump'], website: 'targetlubricants.com', },
       ],
     },
   };
@@ -316,7 +235,7 @@
           networkName: '', // WME dropdown "Other" option
           costType: 'FEE', // FREE, FEE, or COST_TYPE_UNSPECIFIED
           paymentMethods: ['ONLINE_PAYMENT', 'OTHER', 'DEBIT'], // WME payment method item-ids
-          aliases: [],
+          aliases: ['EV Charging Station'],
           website: '',
         },
       ],
@@ -354,7 +273,7 @@
     'VALLET_SERVICE',
   ];
   const SERVICE_DISPLAY = {
-    VALLET_SERVICE:        { servClass: 'serv-valet-service', label: 'Valet' },
+    VALLET_SERVICE:        { servClass: 'serv-valet-service', label: 'Valet Service' },
     DRIVETHROUGH:          { servClass: 'serv-drivethru',     label: 'Drive-Thru' },
     WI_FI:                 { servClass: 'serv-wifi',          label: 'WiFi' },
     RESTROOMS:             { servClass: 'serv-restrooms',     label: 'Restrooms' },
@@ -775,7 +694,7 @@
 
   // --- UI Builders ---
   function buildItemList(itemNumber) {
-    // Categories and subcategories as per latest WME spec
+    // Categories and subcategories as per latest WME spec with icon mappings
     const VENUE_CATEGORIES = [
       { key: 'CAR_SERVICES', icon: 'car-services', subs: ['CAR_WASH', 'CHARGING_STATION', 'GARAGE_AUTOMOTIVE_SHOP', 'GAS_STATION'] },
       { key: 'CRISIS_LOCATIONS', icon: 'crisis-locations', subs: ['DONATION_CENTERS', 'SHELTER_LOCATIONS'] },
@@ -863,22 +782,39 @@
         subs: ['AIRPORT', 'BUS_STATION', 'FERRY_PIER', 'SEAPORT_MARINA_HARBOR', 'SUBWAY_STATION', 'TRAIN_STATION', 'BRIDGE', 'TUNNEL', 'TAXI_STATION', 'JUNCTION_INTERCHANGE', 'REST_AREAS', 'CARPOOL_SPOT'],
       },
     ];
+
+    // Get localized names from SDK (already translated to editor's language)
+    let mainCategoryMap = new Map();
+    let subCategoryMap = new Map();
+
+    try {
+      // Fetch main categories from SDK with localized names
+      const mainCategories = wmeSDK.DataModel.Venues.getVenueMainCategories() || [];
+      mainCategories.forEach((cat) => {
+        mainCategoryMap.set(cat.id, cat.localizedName);
+      });
+
+      // Fetch sub-categories from SDK with localized names
+      const subCategories = wmeSDK.DataModel.Venues.getVenueSubCategories() || [];
+      subCategories.forEach((sub) => {
+        subCategoryMap.set(sub.subCategoryId, sub.localizedName);
+      });
+    } catch (e) {
+      Logger.warn('Failed to fetch SDK localized venue categories:', e);
+    }
+
+    // Helper function to get localized name with fallback to category ID
+    const getLocalizedCategoryName = (categoryId) => mainCategoryMap.get(categoryId) || categoryId;
+    const getLocalizedSubCategoryName = (subCategoryId) => subCategoryMap.get(subCategoryId) || subCategoryId;
+
     let html = `<select id="poiItem${itemNumber}" style="font-size:10px;height:20px;width:100%;max-width:200px;margin:2px 0;">`;
     VENUE_CATEGORIES.forEach((cat) => {
-      try {
-        const categoryName = I18n?.translations?.[I18n.currentLocale()]?.venues?.categories?.[cat.key] || cat.key;
-        html += `<option value="${cat.key}" data-icon="${cat.icon}" style="font-weight:bold;">${categoryName}</option>`;
-        cat.subs.forEach((sub) => {
-          const subCategoryName = I18n?.translations?.[I18n.currentLocale()]?.venues?.categories?.[sub] || sub;
-          html += `<option value="${sub}" data-icon="${cat.icon}">${subCategoryName}</option>`;
-        });
-      } catch (e) {
-        // Fallback if I18n is not available
-        html += `<option value="${cat.key}" data-icon="${cat.icon}" style="font-weight:bold;">${cat.key}</option>`;
-        cat.subs.forEach((sub) => {
-          html += `<option value="${sub}" data-icon="${cat.icon}">${sub}</option>`;
-        });
-      }
+      const categoryName = getLocalizedCategoryName(cat.key);
+      html += `<option value="${cat.key}" data-icon="${cat.icon}" style="font-weight:bold;">${categoryName}</option>`;
+      cat.subs.forEach((sub) => {
+        const subCategoryName = getLocalizedSubCategoryName(sub);
+        html += `<option value="${sub}" data-icon="${cat.icon}">${subCategoryName}</option>`;
+      });
     });
     html += '</select>';
     return html;
@@ -2057,22 +1993,14 @@
   /******************************************legacy shortcuts until here above************************************ */
 
   function getGasStationCategoryKey() {
-    // Use I18n to get the correct category key for gas station
-    // Fallback to 'GAS_STATION' if not found
-    let locale = typeof I18n !== 'undefined' && I18n.currentLocale ? I18n.currentLocale() : 'en';
-    let categories = I18n?.translations?.[locale]?.venues?.categories || {};
-    // Find the key for 'Gas Station' or 'Petrol Station' in the current language
-    for (const key in categories) {
-      if (categories[key] === 'Gas Station' || categories[key] === 'Petrol Station') {
-        return key;
-      }
-    }
-    // Fallback to 'GAS_STATION'
+    // Category key is consistent across all locales
+    // Localized display name is handled by SDK's getVenueSubCategories()
     return 'GAS_STATION';
   }
 
   function getChargingStationCategoryKey() {
-    // Charging station category key is consistent across all locales
+    // Category key is consistent across all locales
+    // Localized display name is handled by SDK's getVenueSubCategories()
     return 'CHARGING_STATION';
   }
 
@@ -3739,6 +3667,9 @@
   Logger.info(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
+  2026.07.11.001      
+      - Venue and subvenue categories now follow editor's locale<br>
+    And minor bug fixes.<br><br>
   2026.06.27.01
       - Bug fix for Lane end PH<br>
       - Bug fix for Shoulder end PH<br>
