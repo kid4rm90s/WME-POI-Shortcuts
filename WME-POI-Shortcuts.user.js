@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2026.07.11.001
+// @version         2026.07.11.002
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -647,6 +647,13 @@
     wmeSDK.Events.on({
       eventName: 'wme-selection-changed',
       eventHandler: () => {
+        // Only process venue selections — skip segments, junctions, etc.
+        // This prevents interference with other scripts like WME Segment City Tool.
+        const currentSelection = wmeSDK.Editing.getSelection();
+        if (!currentSelection || currentSelection.objectType !== 'venue') {
+          return;
+        }
+
         // Clean up old observers/handlers before setting up new ones
         disconnectAliasObserver();
         $('.gas-station-brand-btn, .charging-station-brand-btn').off('click').remove();
@@ -3642,11 +3649,11 @@
       /* Inactive service icons - reduced brightness & saturation for lower contrast */
       '[class^="serv-"]:not([class*="-active"]) { opacity: 0.6}',
       /* Active service icons - enhanced brightness & full saturation for higher contrast */
-      '[class*="-active"] { opacity: 1; filter: brightness(1) saturate(2);}',
+      '[class^="serv-"][class*="-active"] { opacity: 1; filter: brightness(1) saturate(2);}',
       /* Dark theme inactive - even more reduced for visibility */
       '[wz-theme="dark"] [class^="serv-"]:not([class*="-active"]) { filter: brightness(5) saturate(1); }',
       /* Dark theme active - enhanced for visibility */
-      '[wz-theme="dark"] [class*="-active"] { filter: brightness(1) saturate(1); }', //filter: brightness(1.8) saturate(1.3);
+      '[wz-theme="dark"] [class^="serv-"][class*="-active"] { filter: brightness(1) saturate(1); }', //filter: brightness(1.8) saturate(1.3);
     ];
     $('head').append($('<style>', { type: 'text/css' }).html(cssArray.join('\n')));
   }
