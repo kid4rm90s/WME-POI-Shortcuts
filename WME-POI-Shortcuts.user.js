@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2026.07.11.002
+// @version         2026.07.17.002
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -27,7 +27,7 @@
 
   const updateMessage = `
       <strong>NEW :- Updated:</strong><br><br>
-      - Venue and subvenue categories now follow editor's locale<br>
+      - Fixed: Interference between SCT Tool cities dropdown list<br>
     And minor bug fixes.<br><br>
   `;
   const scriptName = GM_info.script.name;
@@ -3674,6 +3674,9 @@
   Logger.info(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
+  2026.07.17.02
+        - Fixed: Interference between SCT Tool cities dropdown list<br>
+    And minor bug fixes.<br><br>
   2026.07.11.001      
       - Venue and subvenue categories now follow editor's locale<br>
     And minor bug fixes.<br><br>
