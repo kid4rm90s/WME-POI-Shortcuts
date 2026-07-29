@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/45389
-// @version         2026.07.17.002
+// @version         2026.07.29.006
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
 // @license         GNU GPLv3
 // @connect         greasyfork.org
+// @connect         translate.googleapis.com
 // @grant           GM_xmlhttpRequest
 // @grant           GM_addElement
 // @grant           unsafeWindow
@@ -26,14 +27,17 @@
   ('use strict');
 
   const updateMessage = `
-      <strong>NEW :- Updated:</strong><br><br>
-      - Fixed: Interference between SCT Tool cities dropdown list<br>
-    And minor bug fixes.<br><br>
+      <strong>WHAT'S NEW :-</strong><br><br>
+      - Migrated to use latest sdk patterns for keyboard shortcuts<br> + Added various language translation support for venue<br>+ and other minor bug fixes and improvements.<br><br>
   `;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
   const downloadUrl = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/code/wme-poi-shortcuts.user.js';
   const forumURL = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/feedback';
+
+  // Global SDK instance — assigned in initScript() after SDK_INITIALIZED resolves
+  let wmeSDK;
+  const settings = {};
 
   // Gas Station Brand Names for Nepal and Pakistan
   const GAS_STATION_BRANDNAME = {
@@ -43,7 +47,7 @@
         {
           buttonLabel: 'NOC', primaryName: 'NOC',
           brand: 'Nepal Oil Corporation',
-          aliases: ['NOC'],
+          aliases: ['Nepal Oil Corporation'],
           website: 'noc.org.np',
         },
       ],
@@ -322,6 +326,7 @@
   const debouncedInjectSwapButton = debounce((wmeSDK) => injectSwapNamesButton(wmeSDK), 100);
   const debouncedInjectButtonStation = debounce((wmeSDK) => injectButtonStation(wmeSDK), 100);
   const debouncedInjectServicesPanel = debounce((wmeSDK) => injectServicesPanel(wmeSDK), 100);
+  const debouncedInjectPOITranslateButton = debounce((wmeSDK) => injectPOITranslateButton(wmeSDK), 100);
 
   // Global variables to track observers and prevent duplicates
   let aliasListObserver = null;
@@ -468,6 +473,9 @@
   `
   );
 
+  // POI translate button CSS is injected directly into the wz-text-input shadow DOM
+  // (see injectTranslateButtonIntoDOM) — matching Road Name Helper WMERNH_container pattern.
+
   // --- GLE (Google Link Enhancer) Integration ---
   // GLE settings and messages
   // Load GLE enabled state from localStorage
@@ -498,6 +506,54 @@
   } catch (e) {
     schoolZoneSpeedLimit = 20; // Default school zone speed limit if parsing fails
   }
+
+  // --- POI Translation settings ---
+  //const POI_TRANSLATION_SPREADSHEET_ID = '1v5oktSBohAGIc_yAs2XBT2xK8oZ9FFR9tT5rT_hL_C8'; // Same sheet as Road Name Helper for GoogleTranslate sheet
+  const POI_TRANSLATION_LOCALES = [
+    { code: 'ne', label: 'ने. (Nepali)', buttonLabel: 'ने.' },
+    { code: 'hi', label: 'हि. (Hindi)', buttonLabel: 'हि.' },
+    { code: 'bn', label: 'বা. (Bengali)', buttonLabel: 'বা.' },
+    { code: 'ta', label: 'த. (Tamil)', buttonLabel: 'த.' },
+    { code: 'te', label: 'తె. (Telugu)', buttonLabel: 'తె.' },
+    { code: 'mr', label: 'मरा. (Marathi)', buttonLabel: 'मरा.' },
+    { code: 'gu', label: 'ગુ. (Gujarati)', buttonLabel: 'ગુ.' },
+    { code: 'kn', label: 'ಕ. (Kannada)', buttonLabel: 'ಕ.' },
+    { code: 'ml', label: 'മ. (Malayalam)', buttonLabel: 'മ.' },
+    { code: 'pa', label: 'ਪੰ. (Punjabi)', buttonLabel: 'ਪੰ.' },
+    { code: 'si', label: 'සි. (Sinhala)', buttonLabel: 'සි.' },
+    { code: 'th', label: 'ท. (Thai)', buttonLabel: 'ท.' },
+    { code: 'my', label: 'မြ. (Burmese)', buttonLabel: 'မြ.' },
+    { code: 'ur', label: 'ا. (Urdu)', buttonLabel: 'ا.' },
+    { code: 'ar', label: 'ع. (Arabic)', buttonLabel: 'ع.' },
+    { code: 'fa', label: 'ف. (Persian)', buttonLabel: 'ف.' },
+  ];
+  // Deduplicate by code (keep first occurrence)
+  const _uniqueLocales = [];
+  const _seenCodes = new Set();
+  for (const loc of POI_TRANSLATION_LOCALES) {
+    if (!_seenCodes.has(loc.code)) { _seenCodes.add(loc.code); _uniqueLocales.push(loc); }
+  }
+  const UNIQUE_TRANSLATION_LOCALES = _uniqueLocales;
+
+  let poiTranslationActive = false;
+  let poiTranslationTargetLanguage = 'ne';
+  let poiTranslationSourceLanguage = 'auto';
+  let poiTranslationButtonLabel = 'ने.'; // Default Nepal button label
+  let poiTranslationSpecialRules = []; // Pre-translation regex rules
+  // Load POI translation settings from localStorage
+  try {
+    const storedActive = localStorage.getItem('wme-poi-shortcuts-poi-translate-enabled');
+    if (storedActive !== null) poiTranslationActive = storedActive === 'true';
+    const storedLocale = localStorage.getItem('wme-poi-shortcuts-poi-translate-locale');
+    if (storedLocale) {
+      const found = UNIQUE_TRANSLATION_LOCALES.find(l => l.code === storedLocale);
+      if (found) {
+        poiTranslationTargetLanguage = found.code;
+        poiTranslationButtonLabel = found.buttonLabel;
+      }
+    }
+  } catch (e) { /* ignore */ }
+
   let GLE = {
     enabled: gleEnabled,
     showTempClosedPOIs: gleShowTempClosed,
@@ -547,6 +603,8 @@
     console.log(`${scriptName} SDK+ initialized successfully`);
     
     const onReady = () => {
+      // Load saved shortcut settings (migrates legacy keys on first call)
+      loadShortcutSettings(true);
       // Setup custom shortcuts after WME is ready
       setupShortcuts(wmeSDK);
       // Register script sidebar tab for venue dropdown
@@ -556,6 +614,7 @@
         debouncedInjectButtonStation(wmeSDK);
         debouncedInjectSwapButton(wmeSDK);
         debouncedInjectServicesPanel(wmeSDK);
+        debouncedInjectPOITranslateButton(wmeSDK);
       }, 500); // Small delay to ensure UI is fully loaded
     };
 
@@ -663,6 +722,7 @@
         debouncedInjectButtonStation(wmeSDK);
         debouncedInjectSwapButton(wmeSDK);
         debouncedInjectServicesPanel(wmeSDK);
+        debouncedInjectPOITranslateButton(wmeSDK);
 
         // Handle edit address for residential venues if setting is enabled
         handleEditAddressForRPP(wmeSDK);
@@ -873,6 +933,13 @@
       </label>
       <br>
       <label style="font-size:10px; font-weight:bold; margin-top:4px; display:inline-block;">
+        <input type="checkbox" id="_cbEnablePOITranslate" ${poiTranslationActive ? 'checked' : ''} /> Show Translate button for POI names
+      </label>
+      <select id="_selPOITranslateLocale" style="margin-left:4px;font-size:10px;height:20px;width:100px;">
+        ${UNIQUE_TRANSLATION_LOCALES.map(l => `<option value="${l.code}" ${l.code === poiTranslationTargetLanguage ? 'selected' : ''}>${l.label}</option>`).join('')}
+      </select>
+      <br>
+      <label style="font-size:10px; font-weight:bold; margin-top:4px; display:inline-block;">
         School Zone SL: <input type="number" id="_inputSchoolZoneSpeedLimit" value="${schoolZoneSpeedLimit}" min="1" max="100" style="width:50px; margin-left:4px;" />
       </label>
     </div>`;
@@ -880,6 +947,8 @@
     setTimeout(() => {
       for (let i = 1; i <= 10; i++) {
         loadPOIShortcutItem(i);
+        // Sync the shortcut description with the currently-selected category in the dropdown
+        _refreshPOIShortcut(i, wmeSDK);
         //legacy shortcuts key added from here
         // Populate shortcut input with the actual shortcut key
         const shortcutKey = i === 10 ? 'Ctrl+0' : `Ctrl+${i}`;
@@ -890,6 +959,11 @@
           .off('change.wmepoi')
           .on('change.wmepoi', function () {
             savePOIShortcutItem(i);
+            // When the category dropdown changes, update the shortcut description
+            // to show the selected category name (e.g., "Create Gas Station")
+            if (this.id.startsWith('poiItem')) {
+              _refreshPOIShortcut(i, wmeSDK);
+            }
             // Prevent duplicate category selection
             // if (this.id.startsWith('poiItem')) {
             //   const selectedCategories = [];
@@ -931,572 +1005,311 @@
     }, 0);
     return html;
   }
-  /*
-  // --- wmeSDK Shortcuts Setup ---
-  // TODO: Re-enable when wmeSDK fixes shortcuts persistence after page refresh
-  /*
-  function setupShortcuts(wmeSDK) {
-    // Create 10 POI shortcut actions, one for each item
-    for (let i = 1; i <= 10; i++) {
-      // Assign shortcutKeys: C1-C9, C0 for 10
-      const shortcutKey = i === 10 ? 'C0' : `C${i}`;
-      const shortcutId = `create-poi-shortcut-${i}`;
-      // Remove previous shortcut if registered
-      if (wmeSDK.Shortcuts.isShortcutRegistered({ shortcutId })) {
-        wmeSDK.Shortcuts.deleteShortcut({ shortcutId });
+  // ===================================================================
+  // SDK SHORTCUT SETUP — Unified Pattern
+  // ===================================================================
+
+  // Hazard layer ID mapping for shortcuts that require enabling layers
+  const _hazardLayerMap = {
+    'toll-booth': 'layer-switcher-item_permanent_hazard_toll_booth',
+    'level-crossing': 'layer-switcher-item_permanent_hazard_railroad_crossing',
+    'school-zone': 'layer-switcher-item_permanent_hazard_school_zone',
+    'sharp-curves': 'layer-switcher-item_permanent_hazard_dangerous_curve',
+    'complex-junctions': 'layer-switcher-item_permanent_hazard_dangerous_intersection',
+    'multiple-lanes-merging': 'layer-switcher-item_permanent_hazard_dangerous_merge',
+    'raised-crosswalk': 'layer-switcher-item_permanent_hazard_raised_crosswalk',
+    'highway-crosswalk': 'layer-switcher-item_permanent_hazard_highway_crosswalk',
+    'narrow-bridge': 'layer-switcher-item_permanent_hazard_narrow_bridge',
+    'both-lanes-ending': 'layer-switcher-item_permanent_hazard_lane_ending',
+    'both-shoulders-ending': 'layer-switcher-item_permanent_hazard_shoulder_ending',
+  };
+
+  /**
+   * Read a hazard's localized label from the WME layer switcher DOM.
+   * Falls back to English if the DOM element isn't available.
+   * Tries multiple strategies: label attribute, shadow DOM text, parent/sibling text.
+   */
+  const _hazardEnglishFallback = {
+    'toll-booth': 'Toll Booth',
+    'level-crossing': 'Level Crossing',
+    'school-zone': 'School Zone',
+    'sharp-curves': 'Sharp Curves',
+    'complex-junctions': 'Complex Junctions',
+    'multiple-lanes-merging': 'Multiple Lanes Merging',
+    'raised-crosswalk': 'Raised Pedestrian Crossing',
+    'highway-crosswalk': 'Pedestrian Crossing',
+    'narrow-bridge': 'Narrow Bridge',
+    'both-lanes-ending': 'Lane End (abrupt)',
+    'both-shoulders-ending': 'Shoulder End (abrupt)',
+  };
+
+  function _getHazardLocalizedName(hazardKey) {
+    try {
+      const el = document.getElementById(_hazardLayerMap[hazardKey]);
+      if (!el) return _hazardEnglishFallback[hazardKey] || hazardKey;
+
+      // Pattern 1: wz-checkbox label attribute
+      var label = el.getAttribute('label');
+      if (label && label.trim()) return label.trim();
+
+      // Pattern 2: shadow DOM text content
+      if (el.shadowRoot) {
+        var shadowText = el.shadowRoot.textContent.trim();
+        if (shadowText) return shadowText;
       }
-      // Check if shortcut keys are in use
-      if (wmeSDK.Shortcuts.areShortcutKeysInUse({ shortcutKeys: shortcutKey })) {
-        Logger.warn(`Shortcut keys ${shortcutKey} already in use, skipping registration for POI Shortcut #${i}`);
-        continue;
+
+      // Pattern 3: parent element text content (excluding the checkbox itself)
+      var parent = el.parentElement;
+      if (parent) {
+        var clone = parent.cloneNode(true);
+        var childEl = clone.querySelector('#' + _hazardLayerMap[hazardKey].replace(/[:.]/g, '\\$&'));
+        if (childEl) childEl.remove();
+        var parentText = clone.textContent.trim();
+        if (parentText) return parentText;
       }
-      wmeSDK.Shortcuts.createShortcut({
-        callback: () => {
-          // Get selected values from the UI for this item
-          const cat = $(`#poiItem${i}`).val();
-          const lock = parseInt($(`#poiLock${i}`).val(), 10);
-          const geomType = $(`#poiGeom${i}`).val();
-          // Geometry: area = drawPolygon, point = drawPoint
-          let drawPromise = geomType === 'point' ? wmeSDK.Map.drawPoint() : wmeSDK.Map.drawPolygon();
-          drawPromise.then((geometry) => {
-            let newVenue = wmeSDK.DataModel.Venues.addVenue({
-              category: cat,
-              geometry: geometry,
-            });
-            wmeSDK.Editing.setSelection({
-              selection: {
-                ids: [newVenue.toString()],
-                objectType: 'venue',
-              },
-            });
-            // Only set lock if lock > 0 (lockRank 1-4)
-            if (!isNaN(lock) && lock > 0) {
-              wmeSDK.DataModel.Venues.updateVenue({
-                venueId: newVenue.toString(),
-                lockRank: lock,
-              });
-            }
-            // Nepal-specific logic for Gas Station
-            const topCountry = wmeSDK.DataModel.Countries.getTopCountry();
-            if (topCountry && (topCountry.name === 'Nepal' || topCountry.code === 'NP') && cat === 'GAS_STATION') {
-              wmeSDK.DataModel.Venues.updateVenue({
-                venueId: newVenue.toString(),
-                name: 'NOC',
-                brand: 'Nepal Oil Corporation',
-              });
-            }
-          });
-        },
-        description: `Create POI Shortcut #${i}`,
-        shortcutId,
-        shortcutKeys: shortcutKey,
-      });
-    }
-
-    // Shortcuts that click on WME's existing UI buttons for POI creation/modification
-    wmeSDK.Shortcuts.createShortcut({
-      callback: () => {
-        $("wz-icon[name='toll-booth']").parent().trigger('click');
-      },
-      description: 'Add Toll Booth',
-      shortcutId: 'add-toll-booth',
-      shortcutKeys: null,
-    });
-
-    wmeSDK.Shortcuts.createShortcut({
-      callback: () => {
-        $("wz-icon[name='railway-crossing']").parent().trigger('click');
-      },
-      description: 'Add Level Crossing',
-      shortcutId: 'add-level-crossing',
-      shortcutKeys: null,
-    });
-
-    wmeSDK.Shortcuts.createShortcut({
-      callback: () => {
-        // OLD DOM manipulation approach (replaced with SDK+):
-        // $("wz-icon[name='school-zone']").parent().trigger('click');
-        
-        // NEW: Use SDK+ to draw polygon and create school zone
-        wmeSDK.Map.drawPolygon().then((geometry) => {
-          try {
-            // Find nearest school POI to name the school zone
-            let schoolName = '';
-            try {
-              const allVenues = wmeSDK.DataModel.Venues.getAll();
-              const schools = allVenues.filter(venue => 
-                venue.categories && venue.categories.includes('SCHOOL')
-              );
-              
-              if (schools.length > 0 && geometry.coordinates && geometry.coordinates[0]) {
-                // Calculate centroid of the polygon
-                const coords = geometry.coordinates[0];
-                let sumLon = 0, sumLat = 0, count = coords.length - 1;
-                for (let i = 0; i < count; i++) {
-                  sumLon += coords[i][0];
-                  sumLat += coords[i][1];
-                }
-                const centerLon = sumLon / count;
-                const centerLat = sumLat / count;
-                
-                // Find nearest school
-                let nearestSchool = null;
-                let minDistance = Infinity;
-                
-                schools.forEach(school => {
-                  let schoolLon, schoolLat;
-                  if (school.geometry.type === 'Point') {
-                    schoolLon = school.geometry.coordinates[0];
-                    schoolLat = school.geometry.coordinates[1];
-                  } else if (school.geometry.type === 'Polygon' && school.geometry.coordinates[0]) {
-                    const schoolCoords = school.geometry.coordinates[0];
-                    let sLon = 0, sLat = 0, sCount = schoolCoords.length - 1;
-                    for (let i = 0; i < sCount; i++) {
-                      sLon += schoolCoords[i][0];
-                      sLat += schoolCoords[i][1];
-                    }
-                    schoolLon = sLon / sCount;
-                    schoolLat = sLat / sCount;
-                  }
-                  
-                  if (schoolLon !== undefined && schoolLat !== undefined) {
-                    const distance = Math.sqrt(
-                      Math.pow(schoolLon - centerLon, 2) + Math.pow(schoolLat - centerLat, 2)
-                    );
-                    
-                    if (distance < minDistance) {
-                      minDistance = distance;
-                      nearestSchool = school;
-                    }
-                  }
-                });
-                
-                if (nearestSchool && nearestSchool.name && nearestSchool.name.trim()) {
-                  schoolName = nearestSchool.name.trim();
-                  Logger.info(`Found nearby school: ${schoolName}`);
-                }
-              }
-            } catch (schoolSearchError) {
-              Logger.warn('Error finding nearby school:', schoolSearchError);
-            }
-            
-            const schoolZoneId = wmeSDK.DataModel.PermanentHazards.addSchoolZone({
-              geometry: geometry,
-              name: schoolName,
-              speedLimit: schoolZoneSpeedLimit,
-              excludedRoadTypes: [1, 2]
-            });
-            Logger.info('School zone created with ID:', schoolZoneId);
-          } catch (error) {
-            Logger.error('Failed to create school zone:', error);
-          }
-        }).catch((error) => {
-          Logger.warn('User cancelled school zone drawing or error occurred:', error);
-        });
-      },
-      description: 'Create School Zone',
-      shortcutId: 'create-school-zone',
-      shortcutKeys: null,
-    });
+    } catch (e) { /* DOM read failed, use fallback */ }
+    return _hazardEnglishFallback[hazardKey] || hazardKey;
   }
-  */
-  /***********************************************legacy shortcuts below*********************************************** */
-  // --- Legacy Shortcuts Setup (Temporary until wmeSDK fixes shortcuts persistence) ---
-  function setupShortcuts(wmeSDK) {
-    // Legacy shortcuts configuration - maps shortcut numbers to keyboard combos
-    var shortcutsConfig = [
-      {
-        handler: 'WME-POI-Shortcuts_poi1',
-        title: 'POI Shortcut 1',
-        func: function (ev) {
-          createPOIFromShortcut(1, wmeSDK);
-        },
-        key: null,
-        arg: { slotNumber: 1 },
-      },
-      {
-        handler: 'WME-POI-Shortcuts_poi2',
-        title: 'POI Shortcut 2',
-        func: function (ev) {
-          createPOIFromShortcut(2, wmeSDK);
-        },
-        key: null,
-        arg: { slotNumber: 2 },
-      },
-      {
-        handler: 'WME-POI-Shortcuts_poi3',
-        title: 'POI Shortcut 3',
-        func: function (ev) {
-          createPOIFromShortcut(3, wmeSDK);
-        },
-        key: null,
-        arg: { slotNumber: 3 },
-      },
-      {
-        handler: 'WME-POI-Shortcuts_poi4',
-        title: 'POI Shortcut 4',
-        func: function (ev) {
-          createPOIFromShortcut(4, wmeSDK);
-        },
-        key: null,
-        arg: { slotNumber: 4 },
-      },
-      {
-        handler: 'WME-POI-Shortcuts_poi5',
-        title: 'POI Shortcut 5',
-        func: function (ev) {
-          createPOIFromShortcut(5, wmeSDK);
-        },
-        key: null,
-        arg: { slotNumber: 5 },
-      },
-      {
-        handler: 'WME-POI-Shortcuts_poi6',
-        title: 'POI Shortcut 6',
-        func: function (ev) {
-          createPOIFromShortcut(6, wmeSDK);
-        },
-        key: null,
-        arg: { slotNumber: 6 },
-      },
-      {
-        handler: 'WME-POI-Shortcuts_poi7',
-        title: 'POI Shortcut 7',
-        func: function (ev) {
-          createPOIFromShortcut(7, wmeSDK);
-        },
-        key: null,
-        arg: { slotNumber: 7 },
-      },
-      {
-        handler: 'WME-POI-Shortcuts_poi8',
-        title: 'POI Shortcut 8',
-        func: function (ev) {
-          createPOIFromShortcut(8, wmeSDK);
-        },
-        key: null,
-        arg: { slotNumber: 8 },
-      },
-      {
-        handler: 'WME-POI-Shortcuts_poi9',
-        title: 'POI Shortcut 9',
-        func: function (ev) {
-          createPOIFromShortcut(9, wmeSDK);
-        },
-        key: null,
-        arg: { slotNumber: 9 },
-      },
-      {
-        handler: 'WME-POI-Shortcuts_poi10',
-        title: 'POI Shortcut 10',
-        func: function (ev) {
-          createPOIFromShortcut(10, wmeSDK);
-        },
-        key: null,
-        arg: { slotNumber: 10 },
-      },
-      {
-        handler: 'WME-POI-Shortcuts_toll-booth',
-        title: 'Add Toll Booth',
-        func: function (ev) {
-          ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_toll_booth', () => {
-            try {
-              WazeToastr.Alerts.info('POI Shortcut', `POI Type: <b>Toll Booth</b>`, false, false, 2000);
-            } catch (e) {
-              Logger.warn('WazeToastr.Alerts.info failed:', e);
-            }
-            $("wz-icon[name='toll-booth']").parent().trigger('click');
-          });
-        },
-        key: -1, // No default key, user can set custom
-        arg: {},
-      },
-      {
-        handler: 'WME-POI-Shortcuts_level-crossing',
-        title: 'Add Level Crossing',
-        func: function (ev) {
-          ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_railroad_crossing', () => {
-            try {
-              WazeToastr.Alerts.info('POI Shortcut', `POI Type: <b>Level Crossing</b>`, false, false, 2000);
-            } catch (e) {
-              Logger.warn('WazeToastr.Alerts.info failed:', e);
-            }
-            $("wz-icon[name='railway-crossing']").parent().trigger('click');
-          });
-        },
-        key: -1, // No default key, user can set custom
-        arg: {},
-      },
-      {
-        handler: 'WME-POI-Shortcuts_school-zone',
-        title: 'Create School Zone',
-        func: function (ev) {
-          ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_school_zone', () => {
-            try {
-              WazeToastr.Alerts.info('POI Shortcut', `Draw the <b>School Zone</b> area on the map`, false, false, 3000);
-            } catch (e) {
-              Logger.warn('WazeToastr.Alerts.info failed:', e);
-            }
-            
-            // OLD DOM manipulation approach (replaced with SDK+):
-            // $("wz-icon[name='school-zone']").parent().trigger('click');
-            
-            // NEW: Use SDK+ to draw polygon and create school zone
-            wmeSDK.Map.drawPolygon().then((geometry) => {
-              try {
-                // Find nearest school POI to name the school zone
-                let schoolName = '';
-                try {
-                  const allVenues = wmeSDK.DataModel.Venues.getAll();
-                    const schools = allVenues.filter(venue => 
-                    venue.categories && venue.categories.some(cat => cat === 'SCHOOL' || cat === 'COLLEGE_UNIVERSITY')
-                    );
-                  
-                  if (schools.length > 0 && geometry.coordinates && geometry.coordinates[0]) {
-                    // Calculate centroid of the polygon
-                    const coords = geometry.coordinates[0];
-                    let sumLon = 0, sumLat = 0, count = coords.length - 1; // -1 to exclude closing point
-                    for (let i = 0; i < count; i++) {
-                      sumLon += coords[i][0];
-                      sumLat += coords[i][1];
-                    }
-                    const centerLon = sumLon / count;
-                    const centerLat = sumLat / count;
-                    
-                    // Find nearest school
-                    let nearestSchool = null;
-                    let minDistance = Infinity;
-                    
-                    schools.forEach(school => {
-                      let schoolLon, schoolLat;
-                      if (school.geometry.type === 'Point') {
-                        schoolLon = school.geometry.coordinates[0];
-                        schoolLat = school.geometry.coordinates[1];
-                      } else if (school.geometry.type === 'Polygon' && school.geometry.coordinates[0]) {
-                        // Calculate centroid of school polygon
-                        const schoolCoords = school.geometry.coordinates[0];
-                        let sLon = 0, sLat = 0, sCount = schoolCoords.length - 1;
-                        for (let i = 0; i < sCount; i++) {
-                          sLon += schoolCoords[i][0];
-                          sLat += schoolCoords[i][1];
-                        }
-                        schoolLon = sLon / sCount;
-                        schoolLat = sLat / sCount;
-                      }
-                      
-                      if (schoolLon !== undefined && schoolLat !== undefined) {
-                        // Simple Euclidean distance (good enough for nearby POIs)
-                        const distance = Math.sqrt(
-                          Math.pow(schoolLon - centerLon, 2) + Math.pow(schoolLat - centerLat, 2)
-                        );
-                        
-                        if (distance < minDistance) {
-                          minDistance = distance;
-                          nearestSchool = school;
-                        }
-                      }
-                    });
-                    
-                    // Use the school name if found and not empty
-                    if (nearestSchool && nearestSchool.name && nearestSchool.name.trim()) {
-                      schoolName = nearestSchool.name.trim();
-                      Logger.info(`Found nearby school: ${schoolName}`);
-                    }
-                  }
-                } catch (schoolSearchError) {
-                  Logger.warn('Error finding nearby school:', schoolSearchError);
-                }
-                
-                const schoolZoneId = wmeSDK.DataModel.PermanentHazards.addSchoolZone({
-                  geometry: geometry,
-                  name: schoolName, // Use found school name or empty string
-                  speedLimit: schoolZoneSpeedLimit,
-                  excludedRoadTypes: [ ] // add here any road types to exclude for example, [1,2] to exclude highways and primary roads
-                });
-                
-                Logger.info('School zone created with ID:', schoolZoneId);
-                
-                try {
-                  const successMsg = schoolName 
-                    ? `<b>School Zone</b> created: ${schoolName} with speed limit ${schoolZoneSpeedLimit} km/h` 
-                    : `<b>School Zone</b> created successfully`;
-                  WazeToastr.Alerts.success('POI Shortcut', successMsg, false, false, 2500);
-                } catch (e) {
-                  Logger.warn('WazeToastr.Alerts.success failed:', e);
-                }
-              } catch (error) {
-                Logger.error('Failed to create school zone:', error);
-                try {
-                  WazeToastr.Alerts.error('POI Shortcut', `Failed to create <b>School Zone</b>: ${error.message}`, false, false, 3000);
-                } catch (e) {
-                  Logger.warn('WazeToastr.Alerts.error failed:', e);
-                }
-              }
-            }).catch((error) => {
-              Logger.warn('User cancelled school zone drawing or error occurred:', error);
-            });
-          });
-        },
-        key: -1, // No default key, user can set custom
-        arg: {},
-      },
-      {
-        handler: 'WME-POI-Shortcuts_sharp-curves',
-        title: 'Create Sharp Curves',
-        func: function (ev) {
-          ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_dangerous_curve', () => {
-            try {
-              WazeToastr.Alerts.info('POI Shortcut', `Hazard Type: <b>Sharp Curves</b>`, false, false, 2000);
-            } catch (e) {
-              Logger.warn('WazeToastr.Alerts.info failed:', e);
-            }
-            $("wz-icon[name='sharp-curve-ahead']").parent().trigger('click');
-          });
-        },
-        key: -1, // No default key, user can set custom
-        arg: {},
-      },
-      {
-        handler: 'WME-POI-Shortcuts_complex-junctions',
-        title: 'Create Complex Junctions',
-        func: function (ev) {
-          ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_dangerous_intersection', () => {
-            try {
-              WazeToastr.Alerts.info('POI Shortcut', `Hazard Type: <b>Complex Junctions</b>`, false, false, 2000);
-            } catch (e) {
-              Logger.warn('WazeToastr.Alerts.info failed:', e);
-            }
-            $("wz-icon[name='dangerous-intersection']").parent().trigger('click');
-          });
-        },
-        key: -1, // No default key, user can set custom
-        arg: {},
-      },
-      {
-        handler: 'WME-POI-Shortcuts_multiple-lanes-merging',
-        title: 'Create Multiple Lanes Merging',
-        func: function (ev) {
-          ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_dangerous_merge', () => {
-            try {
-              WazeToastr.Alerts.info('POI Shortcut', `Hazard Type: <b>Multiple Lanes Merging</b>`, false, false, 2000);
-            } catch (e) {
-              Logger.warn('WazeToastr.Alerts.info failed:', e);
-            }
-            $("wz-icon[name='merge-ahead']").parent().trigger('click');
-          });
-        },
-        key: -1, // No default key, user can set custom
-        arg: {},
-      },
-      {
-        handler: 'WME-POI-Shortcuts_raised-crosswalk',
-        title: 'Create Raised Pedestrian Crossing',
-        func: function (ev) {
-          ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_raised_crosswalk', () => {
-            try {
-              WazeToastr.Alerts.info('POI Shortcut', `Hazard Type: <b>Raised Pedestrian Crossing</b>`, false, false, 2000);
-            } catch (e) {
-              Logger.warn('WazeToastr.Alerts.info failed:', e);
-            }
-            $("wz-icon[name='raised-crosswalk']").parent().trigger('click');
-          });
-        },
-        key: -1, // No default key, user can set custom
-        arg: {},
-      },
-      {
-        handler: 'WME-POI-Shortcuts_highway-crosswalk',
-        title: 'Create Pedestrian Crossing',
-        func: function (ev) {
-          ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_highway_crosswalk', () => {
-            try {
-              WazeToastr.Alerts.info('POI Shortcut', `Hazard Type: <b>Pedestrian Crossing</b>`, false, false, 2000);
-            } catch (e) {
-              Logger.warn('WazeToastr.Alerts.info failed:', e);
-            }
-            $("wz-icon[name='highway-crosswalk']").parent().trigger('click');
-          });
-        },
-        key: -1, // No default key, user can set custom
-        arg: {},
-      },
-      {
-        handler: 'WME-POI-Shortcuts_narrow-bridge',
-        title: 'Create Narrow Bridge',
-        func: function (ev) {
-          ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_narrow_bridge', () => {
-            try {
-              WazeToastr.Alerts.info('POI Shortcut', `Hazard Type: <b>Narrow Bridge</b>`, false, false, 2000);
-            } catch (e) {
-              Logger.warn('WazeToastr.Alerts.info failed:', e);
-            }
-            $("wz-icon[name='narrow-bridge']").parent().trigger('click');
-          });
-        },
-        key: -1, // No default key, user can set custom
-        arg: {},
-      },
-      {
-        handler: 'WME-POI-Shortcuts_both-lanes-ending',
-        title: 'Create Lane End (abrupt)',
-        func: function (ev) {
-          ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_lane_ending', () => {
-            try {
-              WazeToastr.Alerts.info('POI Shortcut', `Hazard Type: <b>Lane End (abrupt)</b>`, false, false, 2000);
-            } catch (e) {
-              Logger.warn('WazeToastr.Alerts.info failed:', e);
-            }
-            $("wz-icon[name='both-lanes-ending']").parent().trigger('click');
-          });
-        },
-        key: -1, // No default key, user can set custom
-        arg: {},
-      },
-      {
-        handler: 'WME-POI-Shortcuts_both-shoulders-ending',
-        title: 'Create Shoulder End (abrupt)',
-        func: function (ev) {
-          ensureHazardLayersEnabled('layer-switcher-item_permanent_hazard_shoulder_ending', () => {
-            try {
-              WazeToastr.Alerts.info('POI Shortcut', `Hazard Type: <b>Shoulder End (abrupt)</b>`, false, false, 2000);
-            } catch (e) {
-              Logger.warn('WazeToastr.Alerts.info failed:', e);
-            }
-            $("wz-icon[name='both-shoulders-ending']").parent().trigger('click');
-          });
-        },
-        key: -1, // No default key, user can set custom
-        arg: {},
-      },
-      {
-        handler: 'WME-POI-Shortcuts_convert-other-to-residential',
-        title: 'Convert OTHER to Residential (Copy Name to House Number)',
-        func: function (ev) {
-          convertOtherToResidential(wmeSDK);
-        },
-        key: -1, // No default key, user can set custom shortcut in WME settings
-        arg: {},
-      },
-    ];
 
-    // Register legacy shortcuts
-    for (var i = 0; i < shortcutsConfig.length; ++i) {
-      WMEKSRegisterKeyboardShortcut('WME-POI-Shortcuts', 'WME POI Shortcuts', shortcutsConfig[i].handler, shortcutsConfig[i].title, shortcutsConfig[i].func, shortcutsConfig[i].key, shortcutsConfig[i].arg);
+  function _buildHazardCallback(hazardKey) {
+    return function () {
+      ensureHazardLayersEnabled(_hazardLayerMap[hazardKey], function () {
+        if (hazardKey === 'school-zone') {
+          // School zone uses SDK drawPolygon + PermanentHazards.addSchoolZone
+          try {
+            WazeToastr.Alerts.info('POI Shortcut', 'Draw the <b>School Zone</b> area on the map', false, false, 3000);
+          } catch (e) {
+            Logger.warn('WazeToastr.Alerts.info failed:', e);
+          }
+          wmeSDK.Map.drawPolygon().then(function (geometry) {
+            try {
+              // Find nearest school POI to name the school zone
+              var schoolName = '';
+              try {
+                var allVenues = wmeSDK.DataModel.Venues.getAll();
+                var schools = allVenues.filter(function (venue) {
+                  return venue.categories && venue.categories.some(function (cat) { return cat === 'SCHOOL' || cat === 'COLLEGE_UNIVERSITY'; });
+                });
+                if (schools.length > 0 && geometry.coordinates && geometry.coordinates[0]) {
+                  var coords = geometry.coordinates[0];
+                  var sumLon = 0, sumLat = 0, count = coords.length - 1;
+                  for (var ci = 0; ci < count; ci++) { sumLon += coords[ci][0]; sumLat += coords[ci][1]; }
+                  var centerLon = sumLon / count, centerLat = sumLat / count;
+                  var nearestSchool = null, minDistance = Infinity;
+                  schools.forEach(function (school) {
+                    var schoolLon, schoolLat;
+                    if (school.geometry.type === 'Point') { schoolLon = school.geometry.coordinates[0]; schoolLat = school.geometry.coordinates[1]; }
+                    else if (school.geometry.type === 'Polygon' && school.geometry.coordinates[0]) {
+                      var sc = school.geometry.coordinates[0], sLon = 0, sLat = 0, sCount = sc.length - 1;
+                      for (var si = 0; si < sCount; si++) { sLon += sc[si][0]; sLat += sc[si][1]; }
+                      schoolLon = sLon / sCount; schoolLat = sLat / sCount;
+                    }
+                    if (schoolLon !== undefined && schoolLat !== undefined) {
+                      var dist = Math.sqrt(Math.pow(schoolLon - centerLon, 2) + Math.pow(schoolLat - centerLat, 2));
+                      if (dist < minDistance) { minDistance = dist; nearestSchool = school; }
+                    }
+                  });
+                  if (nearestSchool && nearestSchool.name && nearestSchool.name.trim()) {
+                    schoolName = nearestSchool.name.trim();
+                    Logger.info('Found nearby school: ' + schoolName);
+                  }
+                }
+              } catch (schoolSearchError) {
+                Logger.warn('Error finding nearby school:', schoolSearchError);
+              }
+              var schoolZoneId = wmeSDK.DataModel.PermanentHazards.addSchoolZone({
+                geometry: geometry,
+                name: schoolName,
+                speedLimit: schoolZoneSpeedLimit,
+                excludedRoadTypes: [],
+              });
+              Logger.info('School zone created with ID:', schoolZoneId);
+              try {
+                WazeToastr.Alerts.success('POI Shortcut', schoolName
+                  ? '<b>School Zone</b> created: ' + schoolName + ' with speed limit ' + schoolZoneSpeedLimit + ' km/h'
+                  : '<b>School Zone</b> created successfully', false, false, 2500);
+              } catch (e) { Logger.warn('WazeToastr.Alerts.success failed:', e); }
+            } catch (error) {
+              Logger.error('Failed to create school zone:', error);
+              try { WazeToastr.Alerts.error('POI Shortcut', 'Failed to create <b>School Zone</b>: ' + error.message, false, false, 3000); } catch (e) { Logger.warn('WazeToastr.Alerts.error failed:', e); }
+            }
+          }).catch(function (error) {
+            Logger.warn('User cancelled school zone drawing or error occurred:', error);
+          });
+        } else {
+          // All other hazards: click the WME button
+          const iconName = {
+            'toll-booth': 'toll-booth',
+            'level-crossing': 'railway-crossing',
+            'sharp-curves': 'sharp-curve-ahead',
+            'complex-junctions': 'dangerous-intersection',
+            'multiple-lanes-merging': 'merge-ahead',
+            'raised-crosswalk': 'raised-crosswalk',
+            'highway-crosswalk': 'highway-crosswalk',
+            'narrow-bridge': 'narrow-bridge',
+            'both-lanes-ending': 'both-lanes-ending',
+            'both-shoulders-ending': 'both-shoulders-ending',
+          }[hazardKey];
+          try {
+            WazeToastr.Alerts.info('POI Shortcut', 'Hazard Type: <b>' + _getHazardLocalizedName(hazardKey) + '</b>', false, false, 2000);
+          } catch (e) { Logger.warn('WazeToastr.Alerts.info failed:', e); }
+          $("wz-icon[name='" + iconName + "']").parent().trigger('click');
+        }
+      });
+    };
+  }
+
+  /**
+   * Dynamic re-registration — updates a POI shortcut's description when the user
+   * changes the category in the sidebar dropdown.
+   * Re-registers ALL shortcuts in order so they maintain their position in
+   * WME Settings → Keyboard Shortcuts (otherwise the updated one would jump to the bottom).
+   */
+  function _refreshPOIShortcut(itemNum, wmeSDK) {
+    const shortcutId = 'WMEPOI_poi' + itemNum;
+    const catName = $('#poiItem' + itemNum + ' option:selected').text();
+    const description = catName && catName !== String(itemNum)
+      ? 'Create ' + catName
+      : 'POI Shortcut ' + itemNum;
+
+    // Update in-memory shortcut definition
+    for (let j = 0; j < _shortcutDefs.length; j++) {
+      if (_shortcutDefs[j].id === shortcutId) {
+        _shortcutDefs[j].description = description;
+        break;
+      }
     }
 
-    WMEKSLoadKeyboardShortcuts('WME-POI-Shortcuts');
+    // Re-register all shortcuts in order so the updated one keeps its position
+    _reregisterAllShortcuts(wmeSDK);
+  }
 
-    window.addEventListener(
-      'beforeunload',
-      function () {
-        // Clean up observers and event handlers before page unload
-        disconnectAliasObserver();
-        $(document).off('focusout.wme-poi-shortcuts');
-        $(document).off('click.wme-poi-shortcuts-alias');
-        WMEKSSaveKeyboardShortcuts('WME-POI-Shortcuts');
-      },
-      false
-    );
+  /**
+   * Full re-registration of all shortcuts in definition order.
+   * Reads current keys from the SDK, then deletes all and recreates in order.
+   * Used after description changes to maintain correct ordering in WME's UI.
+   */
+  function _reregisterAllShortcuts(wmeSDK) {
+    // Read all current shortcut keys from SDK first
+    const allCurrent = {};
+    try {
+      const sdkShortcuts = wmeSDK.Shortcuts.getAllShortcuts();
+      for (let si = 0; si < sdkShortcuts.length; si++) {
+        allCurrent[sdkShortcuts[si].shortcutId] = _normalizeShortcut(sdkShortcuts[si].shortcutKeys);
+      }
+    } catch (e) { /* ignore */ }
+
+    // Delete all existing registrations
+    for (let idx = 0; idx < _shortcutDefs.length; idx++) {
+      if (wmeSDK.Shortcuts.isShortcutRegistered({ shortcutId: _shortcutDefs[idx].id })) {
+        wmeSDK.Shortcuts.deleteShortcut({ shortcutId: _shortcutDefs[idx].id });
+      }
+    }
+
+    // Re-register all in definition order
+    for (let idx = 0; idx < _shortcutDefs.length; idx++) {
+      const def = _shortcutDefs[idx];
+      // Use SDK key if available, else fall back to saved settings
+      const key = allCurrent[def.id] || _normalizeShortcut(settings[def.settingsKey]);
+      try {
+        wmeSDK.Shortcuts.createShortcut({
+          shortcutId: def.id,
+          description: def.description,
+          callback: def.callback,
+          shortcutKeys: key.combo,
+        });
+      } catch (error) {
+        if (String(error).indexOf('already in use') !== -1) {
+          Logger.warn('Key conflict for ' + def.id + ' - registering without key');
+          try {
+            wmeSDK.Shortcuts.createShortcut({
+              shortcutId: def.id,
+              description: def.description,
+              callback: def.callback,
+              shortcutKeys: null,
+            });
+          } catch (error2) {
+            Logger.error('Unable to create shortcut: ' + def.id + '. ' + error2);
+          }
+        } else {
+          Logger.error('Unable to create shortcut: ' + def.id + '. ' + error);
+        }
+      }
+    }
+  }
+
+  /**
+   * Shortcut definitions — data-driven array (unified pattern)
+   * All keys start as null — users assign in WME Settings → Keyboard Shortcuts
+   */
+  let _shortcutDefs = [
+    // 10 POI creation shortcuts
+    { id: 'WMEPOI_poi1', description: 'POI Shortcut 1', settingsKey: 'POI1Shortcut', callback: function () { createPOIFromShortcut(1, wmeSDK); } },
+    { id: 'WMEPOI_poi2', description: 'POI Shortcut 2', settingsKey: 'POI2Shortcut', callback: function () { createPOIFromShortcut(2, wmeSDK); } },
+    { id: 'WMEPOI_poi3', description: 'POI Shortcut 3', settingsKey: 'POI3Shortcut', callback: function () { createPOIFromShortcut(3, wmeSDK); } },
+    { id: 'WMEPOI_poi4', description: 'POI Shortcut 4', settingsKey: 'POI4Shortcut', callback: function () { createPOIFromShortcut(4, wmeSDK); } },
+    { id: 'WMEPOI_poi5', description: 'POI Shortcut 5', settingsKey: 'POI5Shortcut', callback: function () { createPOIFromShortcut(5, wmeSDK); } },
+    { id: 'WMEPOI_poi6', description: 'POI Shortcut 6', settingsKey: 'POI6Shortcut', callback: function () { createPOIFromShortcut(6, wmeSDK); } },
+    { id: 'WMEPOI_poi7', description: 'POI Shortcut 7', settingsKey: 'POI7Shortcut', callback: function () { createPOIFromShortcut(7, wmeSDK); } },
+    { id: 'WMEPOI_poi8', description: 'POI Shortcut 8', settingsKey: 'POI8Shortcut', callback: function () { createPOIFromShortcut(8, wmeSDK); } },
+    { id: 'WMEPOI_poi9', description: 'POI Shortcut 9', settingsKey: 'POI9Shortcut', callback: function () { createPOIFromShortcut(9, wmeSDK); } },
+    { id: 'WMEPOI_poi10', description: 'POI Shortcut 10', settingsKey: 'POI10Shortcut', callback: function () { createPOIFromShortcut(10, wmeSDK); } },
+    // Hazard shortcuts
+    { id: 'WMEPOI_toll-booth', description: 'Add Toll Booth', settingsKey: 'TollBoothShortcut', callback: _buildHazardCallback('toll-booth') },
+    { id: 'WMEPOI_level-crossing', description: 'Add Level Crossing', settingsKey: 'LevelCrossingShortcut', callback: _buildHazardCallback('level-crossing') },
+    { id: 'WMEPOI_school-zone', description: 'Create School Zone', settingsKey: 'SchoolZoneShortcut', callback: _buildHazardCallback('school-zone') },
+    { id: 'WMEPOI_sharp-curves', description: 'Create Sharp Curves', settingsKey: 'SharpCurvesShortcut', callback: _buildHazardCallback('sharp-curves') },
+    { id: 'WMEPOI_complex-junctions', description: 'Create Complex Junctions', settingsKey: 'ComplexJunctionsShortcut', callback: _buildHazardCallback('complex-junctions') },
+    { id: 'WMEPOI_multiple-lanes-merging', description: 'Create Multiple Lanes Merging', settingsKey: 'MultipleLanesMergingShortcut', callback: _buildHazardCallback('multiple-lanes-merging') },
+    { id: 'WMEPOI_raised-crosswalk', description: 'Create Raised Pedestrian Crossing', settingsKey: 'RaisedCrosswalkShortcut', callback: _buildHazardCallback('raised-crosswalk') },
+    { id: 'WMEPOI_highway-crosswalk', description: 'Create Pedestrian Crossing', settingsKey: 'PedestrianCrossingShortcut', callback: _buildHazardCallback('highway-crosswalk') },
+    { id: 'WMEPOI_narrow-bridge', description: 'Create Narrow Bridge', settingsKey: 'NarrowBridgeShortcut', callback: _buildHazardCallback('narrow-bridge') },
+    { id: 'WMEPOI_both-lanes-ending', description: 'Create Lane End (abrupt)', settingsKey: 'LaneEndingShortcut', callback: _buildHazardCallback('both-lanes-ending') },
+    { id: 'WMEPOI_both-shoulders-ending', description: 'Create Shoulder End (abrupt)', settingsKey: 'ShoulderEndingShortcut', callback: _buildHazardCallback('both-shoulders-ending') },
+    // Utility shortcuts
+    { id: 'WMEPOI_convert-other-to-residential', description: 'Convert OTHER to Residential (Copy Name to House Number)', settingsKey: 'ConvertOtherShortcut', callback: function () { convertOtherToResidential(wmeSDK); } },
+  ];
+
+  function setupShortcuts(wmeSDK) {
+    // Apply localized names for hazard shortcuts from the WME layer switcher DOM
+    // This runs after WME is ready, so the DOM labels are available in the editor's language
+    for (const hk in _hazardLayerMap) {
+      if (_hazardLayerMap.hasOwnProperty(hk)) {
+        const localizedName = _getHazardLocalizedName(hk);
+        for (let di = 0; di < _shortcutDefs.length; di++) {
+          if (_shortcutDefs[di].id === 'WMEPOI_' + hk) {
+            _shortcutDefs[di].description = localizedName.indexOf(' ') !== -1
+              ? (localizedName.toLowerCase().indexOf('create') !== -1 || localizedName.toLowerCase().indexOf('add') !== -1
+                ? localizedName
+                : 'Add ' + localizedName)
+              : 'Add ' + localizedName;
+            break;
+          }
+        }
+      }
+    }
+
+    // Normalize all saved settings before registration
+    for (let di = 0; di < _shortcutDefs.length; di++) {
+      settings[_shortcutDefs[di].settingsKey] = _normalizeShortcut(settings[_shortcutDefs[di].settingsKey]);
+    }
+
+    // Register all shortcuts in definition order
+    _reregisterAllShortcuts(wmeSDK);
+
+    Logger.info('Shortcuts initialized - assign keys in Settings > Keyboard Shortcuts');
+
+    // Persistence: auto-save on interval + beforeunload
+    if (typeof _persistInterval === 'undefined' || _persistInterval === null) {
+      const _persistInterval = setInterval(checkShortcutsChanged, 5000);
+    }
+    
+  window.addEventListener('beforeunload', function () {
+    disconnectAliasObserver();
+    $(document).off('focusout.wme-poi-shortcuts');
+    $(document).off('click.wme-poi-shortcuts-alias');
+    checkShortcutsChanged();
+  });
   }
 
   /**
@@ -1932,70 +1745,267 @@
     }
   }
 
-  // --- Legacy Keyboard Shortcuts System (from WME Street to River PLUS) ---
-  function WMEKSRegisterKeyboardShortcut(scriptName, shortcutsHeader, newShortcut, shortcutDescription, functionToCall, shortcutKeysObj, arg) {
-    try {
-      I18n.translations[I18n.locale].keyboard_shortcuts.groups[scriptName].members.length;
-    } catch (c) {
-      (W.accelerators.Groups[scriptName] = []),
-        (W.accelerators.Groups[scriptName].members = []),
-        (I18n.translations[I18n.locale].keyboard_shortcuts.groups[scriptName] = []),
-        (I18n.translations[I18n.locale].keyboard_shortcuts.groups[scriptName].description = shortcutsHeader),
-        (I18n.translations[I18n.locale].keyboard_shortcuts.groups[scriptName].members = []);
+  // ===================================================================
+  // FORMAT CONVERTERS — PIE-style bidirectional system
+  // ===================================================================
+
+  const _KEYCODE_TO_CHAR = {
+    65:'A',66:'B',67:'C',68:'D',69:'E',70:'F',71:'G',72:'H',73:'I',74:'J',75:'K',76:'L',
+    77:'M',78:'N',79:'O',80:'P',81:'Q',82:'R',83:'S',84:'T',85:'U',86:'V',87:'W',88:'X',
+    89:'Y',90:'Z',
+    48:'0',49:'1',50:'2',51:'3',52:'4',53:'5',54:'6',55:'7',56:'8',57:'9',
+    112:'F1',113:'F2',114:'F3',115:'F4',116:'F5',117:'F6',
+    118:'F7',119:'F8',120:'F9',121:'F10',122:'F11',123:'F12',
+    32:'Space',13:'Enter',9:'Tab',27:'Esc',8:'Backspace',46:'Delete',
+    36:'Home',35:'End',33:'PageUp',34:'PageDown',45:'Insert',
+    37:'←',38:'↑',39:'→',40:'↓',
+    188:',',190:'.',191:'/',186:';',222:"'",219:'[',221:']',220:'\\',189:'-',187:'=',192:'',
+  };
+
+  const _CHAR_TO_KEYCODE = Object.fromEntries(
+    Object.entries(_KEYCODE_TO_CHAR).map(function (entry) { return [entry[1].toUpperCase(), Number(entry[0])]; })
+  );
+
+  const _MOD_CHAR_TO_VAL = { C: 1, S: 2, A: 4 };
+
+  function _comboToRaw(str) {
+    if (!str || str === '' || str === '-1' || str === 'None') return null;
+    if (/^\d+,-?\d+$/.test(str)) {
+      var keyCode = parseInt(str.split(',')[1], 10);
+      return keyCode < 0 ? null : str;
     }
-    if (functionToCall && 'function' == typeof functionToCall) {
-      (I18n.translations[I18n.locale].keyboard_shortcuts.groups[scriptName].members[newShortcut] = shortcutDescription),
-        W.accelerators.addAction(newShortcut, {
-          group: scriptName,
-        });
-      var i = '-1',
-        j = {};
-      (j[i] = newShortcut),
-        W.accelerators._registerShortcuts(j),
-        null !== shortcutKeysObj && ((j = {}), (j[shortcutKeysObj] = newShortcut), W.accelerators._registerShortcuts(j)),
-        W.accelerators.events.register(newShortcut, null, function () {
-          functionToCall(arg);
-        });
-    } else alert('The function ' + functionToCall + ' has not been declared');
+    var upperStr = String(str).toUpperCase();
+    if (/^[A-Z0-9]$/.test(upperStr)) return '0,' + _CHAR_TO_KEYCODE[upperStr];
+    if (_CHAR_TO_KEYCODE[upperStr] !== undefined) return '0,' + _CHAR_TO_KEYCODE[upperStr];
+
+    var letterMatch = upperStr.match(/^([ACS]+)\+([A-Z0-9])$/);
+    if (letterMatch) {
+      var modValue = letterMatch[1].split('').reduce(function (acc, char) { return acc | (_MOD_CHAR_TO_VAL[char] || 0); }, 0);
+      return modValue + ',' + letterMatch[2].charCodeAt(0);
+    }
+    var numericMatch = upperStr.match(/^([ACS]+)\+(\d+)$/);
+    if (numericMatch) {
+      var modValue = numericMatch[1].split('').reduce(function (acc, char) { return acc | (_MOD_CHAR_TO_VAL[char] || 0); }, 0);
+      return modValue + ',' + numericMatch[2];
+    }
+    var specialMatch = upperStr.match(/^([ACS]+)\+(.+)$/);
+    if (specialMatch && _CHAR_TO_KEYCODE[specialMatch[2]] !== undefined) {
+      var modValue = specialMatch[1].split('').reduce(function (acc, char) { return acc | (_MOD_CHAR_TO_VAL[char] || 0); }, 0);
+      return modValue + ',' + _CHAR_TO_KEYCODE[specialMatch[2]];
+    }
+    return null;
   }
 
-  function WMEKSLoadKeyboardShortcuts(scriptName) {
-    Logger.info(`Loading keyboard shortcuts for ${scriptName}`);
-    if (localStorage[scriptName + 'KBS']) {
-      const shortcuts = JSON.parse(localStorage[scriptName + 'KBS']);
-      for (let i = 0; i < shortcuts.length; i++) {
-        try {
-          W.accelerators._registerShortcuts(shortcuts[i]);
-        } catch (error) {
-          Logger.error('Error registering shortcut:', error);
+  function _rawToCombo(str) {
+    var raw = _comboToRaw(str);
+    if (!raw) return null;
+    var parts = raw.split(',');
+    var modValue = parseInt(parts[0], 10);
+    var keyCode = parseInt(parts[1], 10);
+    var keyChar = _KEYCODE_TO_CHAR[keyCode] || String(keyCode);
+    var modifiers = '';
+    if (modValue & 1) modifiers += 'C';
+    if (modValue & 2) modifiers += 'S';
+    if (modValue & 4) modifiers += 'A';
+    return modifiers ? modifiers + '+' + keyChar : keyChar;
+  }
+
+  function _normalizeShortcut(value) {
+    const src = value && typeof value === 'object' ? (value.raw !== undefined ? value.raw : value.combo) : value;
+    const raw = _comboToRaw(src);
+    const combo = _rawToCombo(raw);
+    return { raw: raw, combo: combo };
+  }
+
+  // ===================================================================
+  // SETTINGS PERSISTENCE
+  // ===================================================================
+
+  const SHORTCUTS_STORAGE_KEY = 'WMEPOIShortcuts_Settings';
+
+  const shortcutDefaultSettings = {
+    POI1Shortcut: null, POI2Shortcut: null, POI3Shortcut: null, POI4Shortcut: null, POI5Shortcut: null,
+    POI6Shortcut: null, POI7Shortcut: null, POI8Shortcut: null, POI9Shortcut: null, POI10Shortcut: null,
+    TollBoothShortcut: null, LevelCrossingShortcut: null, SchoolZoneShortcut: null,
+    SharpCurvesShortcut: null, ComplexJunctionsShortcut: null, MultipleLanesMergingShortcut: null,
+    RaisedCrosswalkShortcut: null, PedestrianCrossingShortcut: null, NarrowBridgeShortcut: null,
+    LaneEndingShortcut: null, ShoulderEndingShortcut: null, ConvertOtherShortcut: null,
+  };
+
+  function loadShortcutSettings(firstCall) {
+    try {
+      const saved = JSON.parse(localStorage.getItem(SHORTCUTS_STORAGE_KEY));
+      for (const key in shortcutDefaultSettings) {
+        if (shortcutDefaultSettings.hasOwnProperty(key)) {
+          settings[key] = (saved && saved[key] !== undefined) ? saved[key] : shortcutDefaultSettings[key];
+        }
+      }
+    } catch (error) {
+      for (const key in shortcutDefaultSettings) {
+        if (shortcutDefaultSettings.hasOwnProperty(key)) {
+          settings[key] = shortcutDefaultSettings[key];
         }
       }
     }
+
+    // Legacy migration (first call only — runs once per page load)
+    if (firstCall) {
+      _migrateLegacyShortcutKeys();
+    }
+
+    // Normalize all shortcut values to {raw, combo}
+    _normalizeAllShortcutValues();
   }
 
-  function WMEKSSaveKeyboardShortcuts(scriptName) {
-    Logger.info(`Saving keyboard shortcuts for ${scriptName}`);
-    try {
-      WazeToastr.Alerts.success('POI Shortcut', `Saving keyboard shortcuts for ${scriptName}`, false, false, 3000);
-    } catch (e) {
-      Logger.warn('WazeToastr.Alerts.success failed:', e);
-    }
-    const shortcuts = [];
-    for (var actionName in W.accelerators.Actions) {
-      var shortcutString = '';
-      if (W.accelerators.Actions[actionName].group == scriptName) {
-        W.accelerators.Actions[actionName].shortcut
-          ? (W.accelerators.Actions[actionName].shortcut.altKey === !0 && (shortcutString += 'A'),
-            W.accelerators.Actions[actionName].shortcut.shiftKey === !0 && (shortcutString += 'S'),
-            W.accelerators.Actions[actionName].shortcut.ctrlKey === !0 && (shortcutString += 'C'),
-            '' !== shortcutString && (shortcutString += '+'),
-            W.accelerators.Actions[actionName].shortcut.keyCode && (shortcutString += W.accelerators.Actions[actionName].shortcut.keyCode))
-          : (shortcutString = '-1');
-        var shortcutObj = {};
-        (shortcutObj[shortcutString] = W.accelerators.Actions[actionName].id), (shortcuts[shortcuts.length] = shortcutObj);
+  function saveShortcutSettings() {
+    const toSave = {};
+    for (const key in shortcutDefaultSettings) {
+      if (shortcutDefaultSettings.hasOwnProperty(key)) {
+        toSave[key] = settings[key];
       }
     }
-    localStorage[scriptName + 'KBS'] = JSON.stringify(shortcuts);
+    localStorage.setItem(SHORTCUTS_STORAGE_KEY, JSON.stringify(toSave));
+  }
+
+  function _normalizeAllShortcutValues() {
+    for (const key in shortcutDefaultSettings) {
+      if (shortcutDefaultSettings.hasOwnProperty(key)) {
+        settings[key] = _normalizeShortcut(settings[key]);
+      }
+    }
+  }
+
+  // ===================================================================
+  // LEGACY KEY MIGRATION — reads old localStorage['WME-POI-ShortcutsKBS']
+  // ===================================================================
+
+  function _migrateLegacyShortcutKeys() {
+    var oldKey = 'WME-POI-ShortcutsKBS';
+    var raw;
+    try {
+      raw = JSON.parse(localStorage.getItem(oldKey));
+      if (!raw || typeof raw !== 'object') return false;
+    } catch (e) {
+      return false;
+    }
+
+    // Map old shortcut IDs to new settings keys
+    var legacyMap = {
+      'WME-POI-Shortcuts_poi1': 'POI1Shortcut',
+      'WME-POI-Shortcuts_poi2': 'POI2Shortcut',
+      'WME-POI-Shortcuts_poi3': 'POI3Shortcut',
+      'WME-POI-Shortcuts_poi4': 'POI4Shortcut',
+      'WME-POI-Shortcuts_poi5': 'POI5Shortcut',
+      'WME-POI-Shortcuts_poi6': 'POI6Shortcut',
+      'WME-POI-Shortcuts_poi7': 'POI7Shortcut',
+      'WME-POI-Shortcuts_poi8': 'POI8Shortcut',
+      'WME-POI-Shortcuts_poi9': 'POI9Shortcut',
+      'WME-POI-Shortcuts_poi10': 'POI10Shortcut',
+      'WME-POI-Shortcuts_toll-booth': 'TollBoothShortcut',
+      'WME-POI-Shortcuts_level-crossing': 'LevelCrossingShortcut',
+      'WME-POI-Shortcuts_school-zone': 'SchoolZoneShortcut',
+      'WME-POI-Shortcuts_sharp-curves': 'SharpCurvesShortcut',
+      'WME-POI-Shortcuts_complex-junctions': 'ComplexJunctionsShortcut',
+      'WME-POI-Shortcuts_multiple-lanes-merging': 'MultipleLanesMergingShortcut',
+      'WME-POI-Shortcuts_raised-crosswalk': 'RaisedCrosswalkShortcut',
+      'WME-POI-Shortcuts_highway-crosswalk': 'PedestrianCrossingShortcut',
+      'WME-POI-Shortcuts_narrow-bridge': 'NarrowBridgeShortcut',
+      'WME-POI-Shortcuts_both-lanes-ending': 'LaneEndingShortcut',
+      'WME-POI-Shortcuts_both-shoulders-ending': 'ShoulderEndingShortcut',
+      'WME-POI-Shortcuts_convert-other-to-residential': 'ConvertOtherShortcut',
+    };
+
+    var migrated = false;
+
+    // Old format is an array of { "keyString": "handlerId" } objects
+    for (var i = 0; i < raw.length; i++) {
+      var entry = raw[i];
+      for (var keyStr in entry) {
+        if (entry.hasOwnProperty(keyStr)) {
+          var handlerId = entry[keyStr];
+          var currentKey = legacyMap[handlerId];
+          if (!currentKey) continue;
+
+          // Skip if current setting already has a non-null value
+          if (settings[currentKey] && settings[currentKey].combo !== null) continue;
+
+          // Old W.accelerators format has "+" separator already (e.g. "C+82" for Ctrl+R,
+          // "CS+49" for Ctrl+Shift+1). But bare keycodes like "49" (just the "1" key)
+          // have no "+" prefix and fail to parse. Convert bare keycodes to raw "0,49".
+          var convertKey = keyStr;
+          if (convertKey !== '-1' && convertKey !== 'None' && convertKey !== '') {
+            // Check for bare numeric keycode (no modifier letters, no "+")
+            if (/^\d+$/.test(convertKey) && convertKey.indexOf(',') === -1) {
+              // "49" → "0,49" (raw format, no modifiers)
+              convertKey = '0,' + convertKey;
+            }
+          }
+          var normalized = _normalizeShortcut(convertKey);
+          if (normalized && normalized.combo !== null) {
+            settings[currentKey] = normalized;
+            migrated = true;
+            Logger.info('Migrated legacy key "' + keyStr + '" → ' + currentKey + ': ' + normalized.combo);
+          }
+        }
+      }
+    }
+
+    if (migrated) {
+      saveShortcutSettings();
+      Logger.info('Legacy shortcut keys migrated successfully');
+    }
+    return migrated;
+  }
+
+  // ===================================================================
+  // PERSISTENCE — auto-save when user changes shortcuts in WME UI
+  // ===================================================================
+
+  function checkShortcutsChanged() {
+    if (!wmeSDK || !wmeSDK.Shortcuts) return;
+    var shortcuts;
+    try {
+      shortcuts = wmeSDK.Shortcuts.getAllShortcuts();
+    } catch (e) {
+      return;
+    }
+    if (!shortcuts) return;
+
+    var triggerSave = false;
+    for (var i = 0; i < shortcuts.length; i++) {
+      var shortcut = shortcuts[i];
+      var matchingDef = null;
+      for (var j = 0; j < _shortcutDefs.length; j++) {
+        if (_shortcutDefs[j].id === shortcut.shortcutId) {
+          matchingDef = _shortcutDefs[j];
+          break;
+        }
+      }
+      if (!matchingDef) continue;
+
+      var normalized = _normalizeShortcut(shortcut.shortcutKeys);
+      if (settings[matchingDef.settingsKey] && settings[matchingDef.settingsKey].combo !== normalized.combo) {
+        triggerSave = true;
+        break;
+      }
+    }
+
+    if (triggerSave) {
+      for (var i = 0; i < shortcuts.length; i++) {
+        var shortcut = shortcuts[i];
+        var matchingDef = null;
+        for (var j = 0; j < _shortcutDefs.length; j++) {
+          if (_shortcutDefs[j].id === shortcut.shortcutId) {
+            matchingDef = _shortcutDefs[j];
+            break;
+          }
+        }
+        if (matchingDef && matchingDef.settingsKey in settings) {
+          settings[matchingDef.settingsKey] = _normalizeShortcut(shortcut.shortcutKeys);
+        }
+      }
+      saveShortcutSettings();
+    }
   }
   /******************************************legacy shortcuts until here above************************************ */
 
@@ -2765,6 +2775,23 @@
   }
 
   /**
+   * Read the current venue name from the UI input field (catches unsaved typed text).
+   * Falls back to the SDK venue object if the UI isn't available or is empty.
+   */
+  function getCurrentVenueName(venue) {
+    try {
+      const nameInput = document.querySelector('#venue-edit-general wz-text-input[name="name"]');
+      if (nameInput && nameInput.shadowRoot) {
+        const shadowInput = nameInput.shadowRoot.querySelector('input');
+        if (shadowInput && shadowInput.value.trim()) {
+          return shadowInput.value.trim();
+        }
+      }
+    } catch (e) { /* ignore */ }
+    return venue.name ? venue.name.trim() : '';
+  }
+
+  /**
    * Handles NOC button click with specific business logic for Nepal gas stations
    *
    * This function implements intelligent NOC name management with three distinct cases:
@@ -2798,7 +2825,8 @@
    * @param {number} lockRank - The lock rank to apply
    */
   function handleNOCButtonClick(wmeSDK, venueId, venue, lockRank) {
-    const currentName = venue.name ? venue.name.trim() : '';
+    // Read from UI first to catch unsaved typed text, fall back to SDK data
+    const currentName = getCurrentVenueName(venue);
     const currentAliases = Array.isArray(venue.aliases) ? venue.aliases.slice() : [];
 
     // Helper function to build update object with conditional brand/url setting
@@ -3082,12 +3110,15 @@
       // Find the selected brand object to get its predefined aliases
       const selectedBrandObj = countryBrands ? countryBrands.find((brandObj) => brandObj.primaryName === primaryName) : null;
 
+      // Read current name from UI first (catches unsaved typed text)
+      const currentVenueName = getCurrentVenueName(venue);
+
       // Build aliases array following SDK best practices
       let aliases = Array.isArray(venue.aliases) ? venue.aliases.slice() : [];
 
       // Add current venue name to aliases if it's different from the selected primaryName
-      if (venue.name && venue.name !== primaryName && !aliases.includes(venue.name)) {
-        aliases.push(venue.name);
+      if (currentVenueName && currentVenueName !== primaryName && !aliases.includes(currentVenueName)) {
+        aliases.push(currentVenueName);
       }
 
       // Add predefined aliases from the brand data
@@ -3253,12 +3284,15 @@
       // Find the selected brand object to get its predefined aliases
       const selectedBrandObj = countryBrands ? countryBrands.find((brandObj) => brandObj.primaryName === primaryName) : null;
 
+      // Read current name from UI first (catches unsaved typed text)
+      const currentVenueName = getCurrentVenueName(venue);
+
       // Build aliases array following SDK best practices
       let aliases = Array.isArray(venue.aliases) ? venue.aliases.slice() : [];
 
       // Add current venue name to aliases if it's different from the selected primaryName
-      if (venue.name && venue.name !== primaryName && !aliases.includes(venue.name)) {
-        aliases.push(venue.name);
+      if (currentVenueName && currentVenueName !== primaryName && !aliases.includes(currentVenueName)) {
+        aliases.push(currentVenueName);
       }
 
       // Add predefined aliases from the brand data
@@ -3389,6 +3423,363 @@
         } catch (e) { /* silent */ }
       } catch (error) {
         Logger.error('[Services Panel] Error updating services:', error);
+      }
+    });
+  }
+
+  // ========== POI TRANSLATION ==========
+
+  /**
+   * Parse the gviz JSON response from Google Sheets.
+
+  function parseGvizJson(responseText) {
+    const match = responseText.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\);?\s*$/);
+    if (!match) throw new Error('[WME POI Shortcuts] Could not parse gviz response');
+    const parsed = JSON.parse(match[1]);
+    const rows = parsed.table.rows || [];
+    return rows.map((row) => row.c.map((cell) => (cell ? cell.v : null)));
+  }
+
+
+   * Fetch a sheet from Google Sheets as gviz JSON using GM_xmlhttpRequest.
+
+  function fetchSheetRows(sheetName) {
+    return new Promise((resolve, reject) => {
+      const url = `https://docs.google.com/spreadsheets/d/${POI_TRANSLATION_SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheetName)}`;
+      GM_xmlhttpRequest({
+        method: 'GET',
+        url,
+        onload(response) {
+          if (response.status < 200 || response.status >= 300) {
+            reject(new Error(`[WME POI Shortcuts] HTTP ${response.status} fetching sheet "${sheetName}"`));
+            return;
+          }
+          try {
+            resolve(parseGvizJson(response.responseText));
+          } catch (e) {
+            reject(e);
+          }
+        },
+        onerror(err) {
+          reject(new Error(`[WME POI Shortcuts] Network error fetching sheet "${sheetName}": ${JSON.stringify(err)}`));
+        },
+      });
+    });
+  }
+   */
+  /**
+   * Load POI translation settings from localStorage.
+   * Falls back to Nepal defaults if nothing saved.
+   */
+  function loadPOITranslationSettings() {
+    poiTranslationActive = false;
+    poiTranslationTargetLanguage = 'ne';
+    poiTranslationSourceLanguage = 'auto';
+    poiTranslationButtonLabel = 'ने.';
+    poiTranslationSpecialRules = [];
+    try {
+      const storedActive = localStorage.getItem('wme-poi-shortcuts-poi-translate-enabled');
+      if (storedActive !== null) poiTranslationActive = storedActive === 'true';
+      const storedLocale = localStorage.getItem('wme-poi-shortcuts-poi-translate-locale');
+      if (storedLocale) {
+        const found = UNIQUE_TRANSLATION_LOCALES.find(l => l.code === storedLocale);
+        if (found) {
+          poiTranslationTargetLanguage = found.code;
+          poiTranslationButtonLabel = found.buttonLabel;
+        }
+      }
+    } catch (e) { /* ignore */ }
+    Logger.info(`POI Translation settings: active=${poiTranslationActive}, targetLang="${poiTranslationTargetLanguage}", buttonLabel="${poiTranslationButtonLabel}"`);
+  }
+
+  // Hardcoded post-translation cleanup rules (applied after any sheet-loaded rules)
+  // These fix commonly mistranslated abbreviations from Google Translate:
+  const HARDCODED_POST_RULES = [
+    { regex: /(^|\s)मावि(?=\s|$)/g, replace: '$1माध्यमिक विद्यालय' },
+  ];
+
+  /**
+   * Translate POI name to the target language (Nepali by default)
+   * Uses Google Translate API with pre/post processing rules.
+   */
+  async function translatePOIName(text) {
+    if (!text || !text.trim()) return text;
+
+    // Apply pre-translation special rules
+    let processed = text;
+    let specialMatched = false;
+    for (const rule of poiTranslationSpecialRules) {
+      try {
+        const regex = rule.regex instanceof RegExp ? rule.regex : new RegExp(rule.regex, 'gi');
+        if (regex.test(processed)) {
+          processed = processed.replace(regex, rule.replace);
+          specialMatched = true;
+        }
+      } catch (e) {
+        Logger.warn('Invalid regex in POI translation pre-rule:', rule, e);
+      }
+    }
+    if (specialMatched && processed !== text) {
+      // Recursively translate if special rules changed the text
+      return await translatePOIName(processed);
+    }
+
+    // Simple token preservation for {...} blocks
+    const tokenRegex = /({[^}]+})/g;
+    const tokens = [];
+    const tokenized = text.replace(tokenRegex, (m) => {
+      tokens.push(m);
+      return `__TOKEN_${tokens.length - 1}__`;
+    });
+
+    const hasLatin = /[A-Za-z]/.test(tokenized);
+    const hasDevanagari = /[\u0900-\u097F]/.test(tokenized);
+    const hasCJ = /[\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]/.test(tokenized);
+
+    let sourceLang = poiTranslationSourceLanguage;
+    if (sourceLang === 'auto') {
+      if (hasLatin && !hasDevanagari && !hasCJ) {
+        sourceLang = 'en';
+      } else if (hasDevanagari && !hasLatin) {
+        sourceLang = poiTranslationTargetLanguage;
+      }
+    }
+
+    try {
+      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${poiTranslationTargetLanguage}&dt=t&q=${encodeURIComponent(tokenized)}`;
+      return await new Promise((resolve) => {
+        GM_xmlhttpRequest({
+          method: 'GET',
+          url,
+          responseType: 'json',
+          onload(response) {
+            if (response.status < 200 || response.status >= 300) {
+              Logger.error('POI Translate HTTP error:', response.status);
+              resolve(text);
+              return;
+            }
+            let res = response.response;
+            if (typeof res === 'string') {
+              try { res = JSON.parse(res); } catch { /* ignore */ }
+            }
+            let translated = Array.isArray(res) && Array.isArray(res[0])
+              ? res[0].map((seg) => (Array.isArray(seg) ? seg[0] : '')).join('')
+              : (res?.[0]?.[0]?.[0] ?? tokenized);
+
+            // Restore tokens
+            translated = translated.replace(/__TOKEN_(\d+)__/g, (_, i) => tokens[+i] || '');
+
+            Logger.info(`Translation result for "${text}": "${translated}"`);
+
+            // Apply hardcoded post-translation correction rules
+            for (const rule of HARDCODED_POST_RULES) {
+              try {
+                const regex = rule.regex instanceof RegExp ? rule.regex : new RegExp(rule.regex, 'g');
+                translated = translated.replace(regex, rule.replace);
+              } catch (e) {
+                Logger.warn('Invalid regex in POI translation post-rule:', rule, e);
+              }
+            }
+
+            resolve(translated);
+          },
+          onerror() {
+            Logger.error('POI Translate API network error');
+            resolve(text);
+          },
+        });
+      });
+    } catch (e) {
+      Logger.error('POI Translation exception:', e);
+      return text;
+    }
+  }
+
+  /**
+   * Inject a translate button next to the POI name input field.
+   * Observes the venue name input and adds a translate button that:
+   * 1. Translates the current POI name to Nepali
+   * 2. Adds the translated name as an alias to the venue
+   */
+  let poiTranslateObserver = null;
+
+  function injectPOITranslateButton(wmeSDK) {
+    // Clean up previous observer
+    if (poiTranslateObserver) {
+      poiTranslateObserver.disconnect();
+      poiTranslateObserver = null;
+    }
+    $('#poi-translate-container').remove();
+
+    // Only run if a venue is selected
+    const selection = wmeSDK.Editing.getSelection();
+    if (!selection || selection.objectType !== 'venue' || !selection.ids || selection.ids.length !== 1) return;
+
+    const venueId = selection.ids[0];
+    const venue = wmeSDK.DataModel.Venues.getById({ venueId });
+    if (!venue) return;
+
+    // Load translation settings from localStorage
+    loadPOITranslationSettings();
+    if (poiTranslationActive) {
+      injectTranslateButtonIntoDOM(wmeSDK, venueId);
+    }
+  }
+
+  function injectTranslateButtonIntoDOM(wmeSDK, venueId) {
+    // Find the name input element
+    const nameInput = document.querySelector('#venue-edit-general wz-text-input[name="name"]');
+    if (!nameInput || !nameInput.shadowRoot) {
+      // Retry if element not found yet
+      setTimeout(() => injectTranslateButtonIntoDOM(wmeSDK, venueId), 300);
+      return;
+    }
+
+    // Don't inject if already present (check inside shadow DOM, matching Road Name Helper pattern)
+    if (nameInput.shadowRoot.getElementById('poi-translate-container')) return;
+
+    const shadowInput = nameInput.shadowRoot.querySelector('input');
+    if (!shadowInput) return;
+
+    // Find the status-text-container inside the shadow DOM (matching Road Name Helper pattern)
+    // WME venue edit: wz-text-input has <div class="status-text-container"><div class="length-text" dir="ltr">12 / 100</div></div>
+    const statusTextContainer = nameInput.shadowRoot.querySelector('.status-text-container');
+    if (!statusTextContainer) {
+      Logger.warn('Could not find .status-text-container in venue name input shadow DOM');
+      return;
+    }
+
+    // Create translate container — matching Road Name Helper WMERNH_container design exactly
+    const container = document.createElement('div');
+    container.id = 'poi-translate-container';
+    container.className = 'info';
+
+    // Build translate button HTML with inline styles (matching WMERNH_translate_btn pattern)
+    const translateBtnHtml = `<button id="poi-translate-btn" title="Translate POI name and add as alias" style="margin-left:8px;display:flex;align-items:center;gap:2px;padding:2px 6px;font-size:13px;border:1px solid #bbb;border-radius:4px;cursor:pointer;background:#f0f0f0;color:#333;font-weight:bold;">
+        <i class="fa fa-language" aria-hidden="true" style="font-size:14px;"></i>
+        ${poiTranslationButtonLabel}
+      </button>`;
+
+    // Container inner HTML: icon div + output div + translate button (matching WMERNH_container layout)
+    container.innerHTML =
+      '<div class="poi-translate-icon" title="POI Translate">' +
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1ZM7 2.06A5.992 5.992 0 0 0 2.06 7H4.2c.1-.9.36-1.76.78-2.55.52-.98 1.2-1.82 2.02-2.39Zm2 0a6.108 6.108 0 0 1 2.02 2.4c.42.78.68 1.64.78 2.54h2.14A5.992 5.992 0 0 0 9 2.06ZM9 8c0 .7-.1 1.38-.28 2H7.28A8.26 8.26 0 0 1 7 8c0-.7.1-1.38.28-2h1.44c.18.62.28 1.3.28 2Zm-2 0c0 .7.1 1.38.28 2H5.3A6.08 6.08 0 0 1 5 8c0-.7.1-1.38.28-2h1.98A8.26 8.26 0 0 0 7 8Zm.28-4H5.72a6.068 6.068 0 0 1 1.25-1.78c.02.02.04.04.06.06.28.38.52.81.66 1.3.08.14.17.28.25.42h1.44c.08-.14.17-.28.25-.42.14-.49.38-.92.66-1.3.02-.02.04-.04.06-.06A6.068 6.068 0 0 1 10.28 4H8.72ZM8 13.94c-.82-.57-1.5-1.41-2.02-2.4A5.99 5.99 0 0 1 5.2 9H3.06A5.992 5.992 0 0 0 7 13.94ZM8.45 14A6.108 6.108 0 0 0 10.47 11.6c.42-.78.68-1.64.78-2.54h1.4A5.992 5.992 0 0 1 8.45 14Z" clip-rule="evenodd"/></svg>' +
+      '</div>' +
+      //'<div id="poi-translate-output">POI Translate</div>' +
+      translateBtnHtml;
+
+    // Insert at the beginning of status-text-container (matching Road Name Helper insertBefore pattern)
+    statusTextContainer.insertBefore(container, statusTextContainer.firstChild);
+
+    // Create and append Nepali suggestion span (matching WMERNH_nepali_suggestion pattern)
+    const suggestionSpan = document.createElement('span');
+    suggestionSpan.id = 'poi-translation-suggestion';
+    suggestionSpan.style.cssText = 'margin-left:10px;color:#1565c0;font-size:0.95em;font-style:italic;';
+    container.appendChild(suggestionSpan);
+
+    // Inject CSS directly into the shadow root (matching Road Name Helper CSS pattern exactly)
+    const css = [
+      '.status-text-container {display: flex; flex-direction: column-reverse;}',
+      '#poi-translate-container {display: flex; align-items: center; flex-grow: 1; margin-top: var(--wz-label-margin, 8px); padding: 0 2px; border-radius: 5px; background: #ffffff; color: #ffffff; gap: 5px; cursor: default; transition: background 0.25s linear, color 0.25s linear; font-size: 0.9em;}',
+      '#poi-translate-output {color: #000000; white-space: pre-wrap; flex-grow: 1;}',
+      '.poi-translate-icon {display: inline-flex; padding: 2px; height: 12px; background: rgba(0,0,0,0.5); border-radius: 3px; flex-shrink: 0; margin-right: 5px;}',
+      '.poi-translate-icon svg {height: 100%;}',
+      '#poi-translate-container.info {background: #e0f2fe; color: #e0f2fe;}',
+      '#poi-translate-container.check {background: #fef3c7; color: #fef3c7; cursor: pointer;}',
+      '#poi-translate-container.check:hover {background: #fde68a; color: #fde68a;}',
+      '#poi-translate-container.valid {background: #d1fae5; color: #d1fae5;}'
+    ].join(' ');
+    const styleElement = document.createElement('style');
+    styleElement.type = 'text/css';
+    styleElement.textContent = css;
+    nameInput.shadowRoot.appendChild(styleElement);
+
+    const translateBtn = container.querySelector('#poi-translate-btn');
+
+    // Show live translation suggestion as user types (debounced, matching Road Name Helper pattern)
+    let suggestTimeout;
+    let lastSuggestValue = '';
+
+    async function updateTranslationSuggestion() {
+      const currentValue = shadowInput.value.trim();
+      if (!currentValue || !poiTranslationActive) {
+        suggestionSpan.textContent = '';
+        container.className = 'info';
+        lastSuggestValue = '';
+        return;
+      }
+      // Avoid duplicate requests for same value
+      if (currentValue === lastSuggestValue) return;
+      lastSuggestValue = currentValue;
+      suggestionSpan.textContent = 'Translating...';
+      container.className = 'check';
+      const translated = await translatePOIName(currentValue);
+      Logger.info(`Suggestion for "${currentValue}": "${translated}"`);
+      if (translated && translated !== currentValue) {
+        suggestionSpan.textContent = translated;
+        container.className = 'valid';
+      } else {
+        suggestionSpan.textContent = '';
+        container.className = 'info';
+      }
+    }
+
+    shadowInput.addEventListener('input', () => {
+      clearTimeout(suggestTimeout);
+      suggestTimeout = setTimeout(updateTranslationSuggestion, 350);
+    });
+    // Initial suggestion
+    updateTranslationSuggestion();
+
+    // Translate button click handler
+    translateBtn.addEventListener('click', async function () {
+      const currentValue = shadowInput.value.trim();
+      if (!currentValue) return;
+
+      // Reuse the already-translated text from the suggestion span if available
+      const cachedSuggestion = suggestionSpan.textContent.trim();
+      let translated;
+      if (cachedSuggestion && cachedSuggestion !== 'Translating...' && cachedSuggestion !== currentValue) {
+        translated = cachedSuggestion;
+      } else {
+        this.disabled = true;
+        this.textContent = 'Translating...';
+        translated = await translatePOIName(currentValue);
+        this.innerHTML = `<i class="fa fa-language" aria-hidden="true" style="font-size:14px;"></i> ${poiTranslationButtonLabel}`;
+        this.disabled = false;
+      }
+      Logger.info(`Button click: adding translation "${translated}" for "${currentValue}"`);
+
+      if (!translated || translated === currentValue) {
+        WazeToastr.Alerts.info('POI Translate', 'Translation unavailable or same as original.', false, false, 2000);
+        return;
+      }
+
+      // Add translated name as an alias using WME SDK
+      try {
+        const currentVenue = wmeSDK.DataModel.Venues.getById({ venueId });
+        if (!currentVenue) {
+          WazeToastr.Alerts.error('POI Translate', 'Venue not found.', false, false, 2000);
+          return;
+        }
+
+        const aliases = Array.isArray(currentVenue.aliases) ? [...currentVenue.aliases] : [];
+
+        // Check if translated name already exists as an alias or primary name
+        if (aliases.some((a) => a.toLowerCase() === translated.toLowerCase()) ||
+            (currentVenue.name && currentVenue.name.toLowerCase() === translated.toLowerCase())) {
+          WazeToastr.Alerts.info('POI Translate', `"${translated}" already exists as a name for this venue.`, false, false, 2000);
+          return;
+        }
+
+        // Add the translation as a new alias
+        aliases.push(translated);
+        await wmeSDK.DataModel.Venues.updateVenue({ venueId, aliases });
+        Logger.info(`Added Nepali alias "${translated}" to venue ${venueId}`);
+        WazeToastr.Alerts.success('POI Translate', `Added Nepali alias: "${translated}"`, false, false, 3000);
+      } catch (err) {
+        Logger.error('Failed to add translated alias:', err);
+        WazeToastr.Alerts.error('POI Translate', `Failed to add alias: ${err.message}`, false, false, 3000);
       }
     });
   }
@@ -3591,6 +3982,37 @@
             }
           });
         }
+
+        // Add event listener for POI Translate checkbox
+        const cbEnablePOITranslate = document.getElementById('_cbEnablePOITranslate');
+        if (cbEnablePOITranslate) {
+          cbEnablePOITranslate.checked = !!poiTranslationActive;
+          cbEnablePOITranslate.addEventListener('change', function () {
+            poiTranslationActive = this.checked;
+            localStorage.setItem('wme-poi-shortcuts-poi-translate-enabled', JSON.stringify(this.checked));
+            Logger.info(`POI Translate ${this.checked ? 'enabled' : 'disabled'}`);
+            // Hide/show the translate button based on setting
+            const translateContainer = document.getElementById('poi-translate-container');
+            if (translateContainer) {
+              translateContainer.style.display = this.checked ? 'flex' : 'none';
+            }
+          });
+        }
+
+        // Add event listener for POI Translate locale dropdown
+        const selPOITranslateLocale = document.getElementById('_selPOITranslateLocale');
+        if (selPOITranslateLocale) {
+          selPOITranslateLocale.addEventListener('change', function () {
+            const code = this.value;
+            const found = UNIQUE_TRANSLATION_LOCALES.find(l => l.code === code);
+            if (found) {
+              poiTranslationTargetLanguage = found.code;
+              poiTranslationButtonLabel = found.buttonLabel;
+              localStorage.setItem('wme-poi-shortcuts-poi-translate-locale', code);
+              Logger.info(`POI Translate locale set to: ${code}`);
+            }
+          });
+        }
       }, 0);
     } catch (e) {
       console.error('Failed to register POI Shortcuts script tab:', e);
@@ -3674,6 +4096,8 @@
   Logger.info(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
+  2026.09.29.006
+        - Migrated to use latest sdk patterns for keyboard shortcuts<br> + Added various language translation support for venue<br>+ and other minor bug fixes and improvements.<br><br>
   2026.07.17.02
         - Fixed: Interference between SCT Tool cities dropdown list<br>
     And minor bug fixes.<br><br>
