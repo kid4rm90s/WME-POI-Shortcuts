@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
-// @namespace       https://greasyfork.org/users/45389
-// @version         2026.07.29.006
+// @namespace       https://greasyfork.org/users/1087400
+// @version         2026.07.30.001
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -28,7 +28,7 @@
 
   const updateMessage = `
       <strong>WHAT'S NEW :-</strong><br><br>
-      - Migrated to use latest sdk patterns for keyboard shortcuts<br> + Added various language translation support for venue<br>+ and other minor bug fixes and improvements.<br><br>
+      - Fixed a bug where typed primary name is missing when translation button is pressed<br>+ and other minor bug fixes and improvements.<br><br>
   `;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
@@ -510,22 +510,22 @@
   // --- POI Translation settings ---
   //const POI_TRANSLATION_SPREADSHEET_ID = '1v5oktSBohAGIc_yAs2XBT2xK8oZ9FFR9tT5rT_hL_C8'; // Same sheet as Road Name Helper for GoogleTranslate sheet
   const POI_TRANSLATION_LOCALES = [
-    { code: 'ne', label: 'ने. (Nepali)', buttonLabel: 'ने.' },
-    { code: 'hi', label: 'हि. (Hindi)', buttonLabel: 'हि.' },
-    { code: 'bn', label: 'বা. (Bengali)', buttonLabel: 'বা.' },
-    { code: 'ta', label: 'த. (Tamil)', buttonLabel: 'த.' },
-    { code: 'te', label: 'తె. (Telugu)', buttonLabel: 'తె.' },
-    { code: 'mr', label: 'मरा. (Marathi)', buttonLabel: 'मरा.' },
-    { code: 'gu', label: 'ગુ. (Gujarati)', buttonLabel: 'ગુ.' },
-    { code: 'kn', label: 'ಕ. (Kannada)', buttonLabel: 'ಕ.' },
-    { code: 'ml', label: 'മ. (Malayalam)', buttonLabel: 'മ.' },
-    { code: 'pa', label: 'ਪੰ. (Punjabi)', buttonLabel: 'ਪੰ.' },
-    { code: 'si', label: 'සි. (Sinhala)', buttonLabel: 'සි.' },
-    { code: 'th', label: 'ท. (Thai)', buttonLabel: 'ท.' },
-    { code: 'my', label: 'မြ. (Burmese)', buttonLabel: 'မြ.' },
-    { code: 'ur', label: 'ا. (Urdu)', buttonLabel: 'ا.' },
-    { code: 'ar', label: 'ع. (Arabic)', buttonLabel: 'ع.' },
-    { code: 'fa', label: 'ف. (Persian)', buttonLabel: 'ف.' },
+    { code: 'ne', name: 'Nepali', label: 'ने. (Nepali)', buttonLabel: 'ने.' },
+    { code: 'hi', name: 'Hindi', label: 'हि. (Hindi)', buttonLabel: 'हि.' },
+    { code: 'bn', name: 'Bengali', label: 'বা. (Bengali)', buttonLabel: 'বা.' },
+    { code: 'ta', name: 'Tamil', label: 'த. (Tamil)', buttonLabel: 'த.' },
+    { code: 'te', name: 'Telugu', label: 'తె. (Telugu)', buttonLabel: 'తె.' },
+    { code: 'mr', name: 'Marathi', label: 'मरा. (Marathi)', buttonLabel: 'मरा.' },
+    { code: 'gu', name: 'Gujarati', label: 'ગુ. (Gujarati)', buttonLabel: 'ગુ.' },
+    { code: 'kn', name: 'Kannada', label: 'ಕ. (Kannada)', buttonLabel: 'ಕ.' },
+    { code: 'ml', name: 'Malayalam', label: 'മ. (Malayalam)', buttonLabel: 'മ.' },
+    { code: 'pa', name: 'Punjabi', label: 'ਪੰ. (Punjabi)', buttonLabel: 'ਪੰ.' },
+    { code: 'si', name: 'Sinhala', label: 'සි. (Sinhala)', buttonLabel: 'සි.' },
+    { code: 'th', name: 'Thai', label: 'ท. (Thai)', buttonLabel: 'ท.' },
+    { code: 'my', name: 'Burmese', label: 'မြ. (Burmese)', buttonLabel: 'မြ.' },
+    { code: 'ur', name: 'Urdu', label: 'ا. (Urdu)', buttonLabel: 'ا.' },
+    { code: 'ar', name: 'Arabic', label: 'ع. (Arabic)', buttonLabel: 'ع.' },
+    { code: 'fa', name: 'Persian', label: 'ف. (Persian)', buttonLabel: 'ف.' },
   ];
   // Deduplicate by code (keep first occurrence)
   const _uniqueLocales = [];
@@ -539,6 +539,7 @@
   let poiTranslationTargetLanguage = 'ne';
   let poiTranslationSourceLanguage = 'auto';
   let poiTranslationButtonLabel = 'ने.'; // Default Nepal button label
+  let poiTranslationLocaleName = 'Nepali'; // Default Nepal locale name
   let poiTranslationSpecialRules = []; // Pre-translation regex rules
   // Load POI translation settings from localStorage
   try {
@@ -550,6 +551,7 @@
       if (found) {
         poiTranslationTargetLanguage = found.code;
         poiTranslationButtonLabel = found.buttonLabel;
+        poiTranslationLocaleName = found.name;
       }
     }
   } catch (e) { /* ignore */ }
@@ -3476,6 +3478,7 @@
     poiTranslationTargetLanguage = 'ne';
     poiTranslationSourceLanguage = 'auto';
     poiTranslationButtonLabel = 'ने.';
+    poiTranslationLocaleName = 'Nepali';
     poiTranslationSpecialRules = [];
     try {
       const storedActive = localStorage.getItem('wme-poi-shortcuts-poi-translate-enabled');
@@ -3486,10 +3489,11 @@
         if (found) {
           poiTranslationTargetLanguage = found.code;
           poiTranslationButtonLabel = found.buttonLabel;
+          poiTranslationLocaleName = found.name;
         }
       }
     } catch (e) { /* ignore */ }
-    Logger.info(`POI Translation settings: active=${poiTranslationActive}, targetLang="${poiTranslationTargetLanguage}", buttonLabel="${poiTranslationButtonLabel}"`);
+    Logger.info(`POI Translation settings: active=${poiTranslationActive}, targetLang="${poiTranslationTargetLanguage}", localeName="${poiTranslationLocaleName}", buttonLabel="${poiTranslationButtonLabel}"`);
   }
 
   // Hardcoded post-translation cleanup rules (applied after any sheet-loaded rules)
@@ -3765,18 +3769,23 @@
 
         const aliases = Array.isArray(currentVenue.aliases) ? [...currentVenue.aliases] : [];
 
+        // Read the current primary name from the UI input first (catches unsaved typed text),
+        // falling back to the SDK model. This MUST be passed along with aliases in the update,
+        // otherwise WME clears the primary name field.
+        const currentName = getCurrentVenueName(currentVenue);
+
         // Check if translated name already exists as an alias or primary name
         if (aliases.some((a) => a.toLowerCase() === translated.toLowerCase()) ||
-            (currentVenue.name && currentVenue.name.toLowerCase() === translated.toLowerCase())) {
+            (currentName && currentName.toLowerCase() === translated.toLowerCase())) {
           WazeToastr.Alerts.info('POI Translate', `"${translated}" already exists as a name for this venue.`, false, false, 2000);
           return;
         }
 
-        // Add the translation as a new alias
+        // Add the translation as a new alias, preserving the current primary name
         aliases.push(translated);
-        await wmeSDK.DataModel.Venues.updateVenue({ venueId, aliases });
-        Logger.info(`Added Nepali alias "${translated}" to venue ${venueId}`);
-        WazeToastr.Alerts.success('POI Translate', `Added Nepali alias: "${translated}"`, false, false, 3000);
+        await wmeSDK.DataModel.Venues.updateVenue({ venueId, name: currentName, aliases });
+        Logger.info(`Added ${poiTranslationLocaleName} alias "${translated}" to venue ${venueId}`);
+        WazeToastr.Alerts.success('POI Translate', `Added ${poiTranslationLocaleName} alias: "${translated}"`, false, false, 3000);
       } catch (err) {
         Logger.error('Failed to add translated alias:', err);
         WazeToastr.Alerts.error('POI Translate', `Failed to add alias: ${err.message}`, false, false, 3000);
@@ -4008,8 +4017,9 @@
             if (found) {
               poiTranslationTargetLanguage = found.code;
               poiTranslationButtonLabel = found.buttonLabel;
+              poiTranslationLocaleName = found.name;
               localStorage.setItem('wme-poi-shortcuts-poi-translate-locale', code);
-              Logger.info(`POI Translate locale set to: ${code}`);
+              Logger.info(`POI Translate locale set to: ${code} (${poiTranslationLocaleName})`);
             }
           });
         }
@@ -4096,6 +4106,9 @@
   Logger.info(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
+  2026.07.30.001
+        <strong>WHAT'S NEW :-</strong><br><br>
+      - Fixed a bug where typed primary name is missing when translation button is pressed<br>+ and other minor bug fixes and improvements.<br><br>
   2026.09.29.006
         - Migrated to use latest sdk patterns for keyboard shortcuts<br> + Added various language translation support for venue<br>+ and other minor bug fixes and improvements.<br><br>
   2026.07.17.02
