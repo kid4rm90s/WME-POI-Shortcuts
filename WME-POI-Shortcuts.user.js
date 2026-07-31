@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/1087400
-// @version         2026.07.30.001
+// @version         2026.07.31.001
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -16,10 +16,11 @@
 // @require         https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js
 // @require         https://greasyfork.org/scripts/560385/code/WazeToastr.js
 // @require         https://greasyfork.org/scripts/523706/code/Link%20Enhancer.js
-// @require         https://cdn.jsdelivr.net/gh/TheEditorX/wme-sdk-plus@72968ef0792a3bd673f768f8ee2a10d67653d1ea/wme-sdk-plus.js
+// @require         https://cdn.jsdelivr.net/gh/TheEditorX/wme-sdk-plus@0b212bcaddf3e7983b28b220d120e0dd687a74d1/wme-sdk-plus.js
+
 // ==/UserScript==
 
-
+/* commit hash for version 1.4.1 : 0b212bcaddf3e7983b28b220d120e0dd687a74d1 ; added on 2026.7.31*/
 /* global WazeToastr, wmeSdkPlus, GoogleLinkEnhancer */
 /* services icon is referenced from WME-Place-Harmonizer (https://greasyfork.org/en/scripts/28690-wme-place-harmonizer) written by WMEPH Development Group */
 
@@ -28,6 +29,7 @@
 
   const updateMessage = `
       <strong>WHAT'S NEW :-</strong><br><br>
+      - Added 'Create School Zone using Drawline' shortcut: draw a line and a 10m-wide school zone is created automatically<br>
       - Fixed a bug where typed primary name is missing when translation button is pressed<br>+ and other minor bug fixes and improvements.<br><br>
   `;
   const scriptName = GM_info.script.name;
@@ -483,6 +485,7 @@
   let gleShowTempClosed = true;
   let openEditAddressOnRPP = false;
   let schoolZoneSpeedLimit = 20; // Default speed limit for school zones, can be customized in settings
+  let schoolZoneWidth = 10; // Default width (meters) of the drawn line when creating school zones via draw line
   try {
     gleEnabled = JSON.parse(localStorage.getItem('wme-poi-shortcuts-gle-enabled'));
   } catch (e) {
@@ -505,6 +508,14 @@
     }
   } catch (e) {
     schoolZoneSpeedLimit = 20; // Default school zone speed limit if parsing fails
+  }
+  try {
+    const storedSchoolZoneWidth = parseInt(localStorage.getItem('wme-poi-shortcuts-school-zone-width'), 10);
+    if (!isNaN(storedSchoolZoneWidth) && storedSchoolZoneWidth > 0) {
+      schoolZoneWidth = storedSchoolZoneWidth;
+    }
+  } catch (e) {
+    schoolZoneWidth = 10; // Default school zone line width if parsing fails
   }
 
   // --- POI Translation settings ---
@@ -943,6 +954,9 @@
       <br>
       <label style="font-size:10px; font-weight:bold; margin-top:4px; display:inline-block;">
         School Zone SL: <input type="number" id="_inputSchoolZoneSpeedLimit" value="${schoolZoneSpeedLimit}" min="1" max="100" style="width:50px; margin-left:4px;" />
+        <div style="margin-top:6px;">
+          School Zone Width (m): <input type="number" id="_inputSchoolZoneWidth" value="${schoolZoneWidth}" min="1" max="200" style="width:50px; margin-left:4px;" />
+        </div>
       </label>
     </div>`;
     html += `<div style='font-size:10px;color:#888;margin-top:8px;'>You can bind keyboard shortcuts using WME's native shortcuts section.</div>`;
@@ -966,44 +980,9 @@
             if (this.id.startsWith('poiItem')) {
               _refreshPOIShortcut(i, wmeSDK);
             }
-            // Prevent duplicate category selection
-            // if (this.id.startsWith('poiItem')) {
-            //   const selectedCategories = [];
-            //   for (let j = 1; j <= 10; j++) {
-            //     const val = $(`#poiItem${j}`).val();
-            //     if (val) selectedCategories.push(val);
-            //   }
-            //   for (let j = 1; j <= 10; j++) {
-            //     $(`#poiItem${j} option`).prop('disabled', false).removeAttr('title');
-            //   }
-            //   for (let j = 1; j <= 10; j++) {
-            //     const currentVal = $(`#poiItem${j}`).val();
-            //     for (const cat of selectedCategories) {
-            //       if (cat !== currentVal) {
-            //         $(`#poiItem${j} option[value='${cat}']`).prop('disabled', true).attr('title', 'this category is already selected.');
-            //       }
-            //     }
-            //   }
-            // }
+
           });
       }
-      // Initial duplicate prevention
-      // const selectedCategories = [];
-      // for (let j = 1; j <= 10; j++) {
-      //   const val = $(`#poiItem${j}`).val();
-      //   if (val) selectedCategories.push(val);
-      // }
-      // for (let j = 1; j <= 10; j++) {
-      //   $(`#poiItem${j} option`).prop('disabled', false).removeAttr('title');
-      // }
-      // for (let j = 1; j <= 10; j++) {
-      //   const currentVal = $(`#poiItem${j}`).val();
-      //   for (const cat of selectedCategories) {
-      //     if (cat !== currentVal) {
-      //       $(`#poiItem${j} option[value='${cat}']`).prop('disabled', true).attr('title', 'this category is already selected.');
-      //     }
-      //   }
-      // }
     }, 0);
     return html;
   }
@@ -1073,19 +1052,13 @@
     return _hazardEnglishFallback[hazardKey] || hazardKey;
   }
 
-  function _buildHazardCallback(hazardKey) {
-    return function () {
-      ensureHazardLayersEnabled(_hazardLayerMap[hazardKey], function () {
-        if (hazardKey === 'school-zone') {
-          // School zone uses SDK drawPolygon + PermanentHazards.addSchoolZone
-          try {
-            WazeToastr.Alerts.info('POI Shortcut', 'Draw the <b>School Zone</b> area on the map', false, false, 3000);
-          } catch (e) {
-            Logger.warn('WazeToastr.Alerts.info failed:', e);
-          }
-          wmeSDK.Map.drawPolygon().then(function (geometry) {
-            try {
-              // Find nearest school POI to name the school zone
+  /**
+   * Finds the name of the school venue closest to the center of the given geometry.
+   * Used to automatically name newly created school zones.
+   * @param geometry A GeoJSON Polygon geometry.
+   * @returns The nearest school's name, or an empty string if none is found.
+   */
+  function _findNearestSchoolName(geometry) {
               var schoolName = '';
               try {
                 var allVenues = wmeSDK.DataModel.Venues.getAll();
@@ -1119,6 +1092,16 @@
               } catch (schoolSearchError) {
                 Logger.warn('Error finding nearby school:', schoolSearchError);
               }
+    return schoolName;
+  }
+
+  /**
+   * Creates a school zone with the given geometry, auto-naming it after the nearest school.
+   * @param geometry A GeoJSON Polygon geometry.
+   * @returns The ID of the newly created school zone.
+   */
+  function _createSchoolZone(geometry) {
+    var schoolName = _findNearestSchoolName(geometry);
               var schoolZoneId = wmeSDK.DataModel.PermanentHazards.addSchoolZone({
                 geometry: geometry,
                 name: schoolName,
@@ -1131,6 +1114,32 @@
                   ? '<b>School Zone</b> created: ' + schoolName + ' with speed limit ' + schoolZoneSpeedLimit + ' km/h'
                   : '<b>School Zone</b> created successfully', false, false, 2500);
               } catch (e) { Logger.warn('WazeToastr.Alerts.success failed:', e); }
+    return schoolZoneId;
+  }
+
+  function _buildHazardCallback(hazardKey, drawMode) {
+    return function () {
+      ensureHazardLayersEnabled(_hazardLayerMap[hazardKey], function () {
+        if (hazardKey === 'school-zone') {
+          // School zone uses SDK drawing + PermanentHazards.addSchoolZone.
+          // drawMode: 'polygon' (draw an area) or 'line' (draw a line buffered into a polygon)
+          var isLineMode = drawMode === 'line';
+          try {
+            WazeToastr.Alerts.info('POI Shortcut', isLineMode
+              ? 'Draw the <b>School Zone</b> line on the map'
+              : 'Draw the <b>School Zone</b> area on the map', false, false, 3000);
+          } catch (e) {
+            Logger.warn('WazeToastr.Alerts.info failed:', e);
+          }
+          var drawPromise = isLineMode ? wmeSDK.Map.drawLine() : wmeSDK.Map.drawPolygon();
+          drawPromise.then(function (drawn) {
+            try {
+              var geometry = drawn;
+              if (isLineMode) {
+                var lineGeometry = drawn.geometry || drawn;
+                geometry = turf.buffer(lineGeometry, schoolZoneWidth / 2, { units: 'meters' }).geometry;
+              }
+              _createSchoolZone(geometry);
             } catch (error) {
               Logger.error('Failed to create school zone:', error);
               try { WazeToastr.Alerts.error('POI Shortcut', 'Failed to create <b>School Zone</b>: ' + error.message, false, false, 3000); } catch (e) { Logger.warn('WazeToastr.Alerts.error failed:', e); }
@@ -1260,6 +1269,7 @@
     { id: 'WMEPOI_toll-booth', description: 'Add Toll Booth', settingsKey: 'TollBoothShortcut', callback: _buildHazardCallback('toll-booth') },
     { id: 'WMEPOI_level-crossing', description: 'Add Level Crossing', settingsKey: 'LevelCrossingShortcut', callback: _buildHazardCallback('level-crossing') },
     { id: 'WMEPOI_school-zone', description: 'Create School Zone', settingsKey: 'SchoolZoneShortcut', callback: _buildHazardCallback('school-zone') },
+    { id: 'WMEPOI_school-zone-line', description: 'Create School Zone using Drawline', settingsKey: 'SchoolZoneLineShortcut', callback: _buildHazardCallback('school-zone', 'line') },
     { id: 'WMEPOI_sharp-curves', description: 'Create Sharp Curves', settingsKey: 'SharpCurvesShortcut', callback: _buildHazardCallback('sharp-curves') },
     { id: 'WMEPOI_complex-junctions', description: 'Create Complex Junctions', settingsKey: 'ComplexJunctionsShortcut', callback: _buildHazardCallback('complex-junctions') },
     { id: 'WMEPOI_multiple-lanes-merging', description: 'Create Multiple Lanes Merging', settingsKey: 'MultipleLanesMergingShortcut', callback: _buildHazardCallback('multiple-lanes-merging') },
@@ -1828,7 +1838,7 @@
   const shortcutDefaultSettings = {
     POI1Shortcut: null, POI2Shortcut: null, POI3Shortcut: null, POI4Shortcut: null, POI5Shortcut: null,
     POI6Shortcut: null, POI7Shortcut: null, POI8Shortcut: null, POI9Shortcut: null, POI10Shortcut: null,
-    TollBoothShortcut: null, LevelCrossingShortcut: null, SchoolZoneShortcut: null,
+    TollBoothShortcut: null, LevelCrossingShortcut: null, SchoolZoneShortcut: null, SchoolZoneLineShortcut: null,
     SharpCurvesShortcut: null, ComplexJunctionsShortcut: null, MultipleLanesMergingShortcut: null,
     RaisedCrosswalkShortcut: null, PedestrianCrossingShortcut: null, NarrowBridgeShortcut: null,
     LaneEndingShortcut: null, ShoulderEndingShortcut: null, ConvertOtherShortcut: null,
@@ -1906,6 +1916,7 @@
       'WME-POI-Shortcuts_toll-booth': 'TollBoothShortcut',
       'WME-POI-Shortcuts_level-crossing': 'LevelCrossingShortcut',
       'WME-POI-Shortcuts_school-zone': 'SchoolZoneShortcut',
+      'WME-POI-Shortcuts_school-zone-line': 'SchoolZoneLineShortcut',
       'WME-POI-Shortcuts_sharp-curves': 'SharpCurvesShortcut',
       'WME-POI-Shortcuts_complex-junctions': 'ComplexJunctionsShortcut',
       'WME-POI-Shortcuts_multiple-lanes-merging': 'MultipleLanesMergingShortcut',
@@ -3992,6 +4003,25 @@
           });
         }
 
+        // Add event listener for School Zone Width input
+        const inputSchoolZoneWidth = document.getElementById('_inputSchoolZoneWidth');
+        if (inputSchoolZoneWidth) {
+          // Restore value from localStorage
+          inputSchoolZoneWidth.value = schoolZoneWidth;
+          inputSchoolZoneWidth.addEventListener('change', function () {
+            const newWidth = parseInt(this.value, 10);
+            if (!isNaN(newWidth) && newWidth > 0 && newWidth <= 200) {
+              schoolZoneWidth = newWidth;
+              localStorage.setItem('wme-poi-shortcuts-school-zone-width', newWidth.toString());
+              Logger.info(`School zone line width set to ${newWidth}`);
+            } else {
+              // Restore previous valid value if invalid input
+              this.value = schoolZoneWidth;
+              Logger.warn('Invalid school zone width. Must be between 1 and 200.');
+            }
+          });
+        }
+
         // Add event listener for POI Translate checkbox
         const cbEnablePOITranslate = document.getElementById('_cbEnablePOITranslate');
         if (cbEnablePOITranslate) {
@@ -4106,6 +4136,8 @@
   Logger.info(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
+  2026.07.31.001
+  - Added 'Create School Zone using Drawline' shortcut: draw a line and a 10m-wide school zone is created automatically
   2026.07.30.001
         <strong>WHAT'S NEW :-</strong><br><br>
       - Fixed a bug where typed primary name is missing when translation button is pressed<br>+ and other minor bug fixes and improvements.<br><br>
