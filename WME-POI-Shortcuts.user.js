@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/1087400
-// @version         2026.08.01.002
+// @version         2026.08.03.001
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -29,8 +29,8 @@
 
   const updateMessage = `
       <strong>WHAT'S NEW :-</strong><br><br>
-      - Added 'Create School Zone using Drawline' shortcut: draw a line and a 10m-wide school zone is created automatically<br>
-      - Fixed a bug where typed primary name is missing when translation button is pressed<br>+ and other minor bug fixes and improvements.<br><br>
+      + Added 'Create School Zone using Drawline' shortcut: draw a line and a 10m-wide school zone is created automatically<br>
+      + Fixed a bug where typed primary name is missing when translation button is pressed<br>+ and other minor bug fixes and improvements.<br><br>
   `;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
@@ -3704,6 +3704,7 @@
   // These fix commonly mistranslated abbreviations from Google Translate:
   const HARDCODED_POST_RULES = [
     { regex: /(^|\s)मावि(?=\s|$)/g, replace: '$1माध्यमिक विद्यालय' },
+    { regex: /(^|\s)कुटीज(?=\s|$)/g, replace: '$1कटेज' },
   ];
 
   /**
