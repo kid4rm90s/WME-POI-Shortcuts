@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2026.09.10.001] - 2026-09-10
+
+### ✨ Gemini Translation (Beta)
+
+#### Added
+- **Gemini as an alternative translation engine** for POI names, alongside Google Translate.
+  - Provider dropdown in the POI Shortcuts sidebar (Google / Gemini).
+  - Automatic fallback to the other engine when the primary fails or returns no usable result.
+  - Gemini API key stored in Tampermonkey sandboxed storage (`GM_setValue`/`GM_getValue`), not localStorage.
+  - Uses Gemini 3.5 Flash-Lite via the REST `generateContent` endpoint with a brand-preserving translation prompt.
+
+#### Changed
+- Live translation suggestion now waits for you to finish typing (idle debounce ~1.2s) before sending a request, preventing mid-typing API calls.
+- Added a stale-response guard so out-of-order results never overwrite the current text.
+
+---
+
 ## [2025.12.17.01] - 2025-12-17
 
 ### 🐛 Bug Fixes
