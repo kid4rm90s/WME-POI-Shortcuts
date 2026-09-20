@@ -1,15 +1,18 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/1087400
-// @version         2026.08.03.001
+// @version         2026.09.12.001
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
 // @license         GNU GPLv3
 // @connect         greasyfork.org
 // @connect         translate.googleapis.com
+// @connect         generativelanguage.googleapis.com
 // @grant           GM_xmlhttpRequest
 // @grant           GM_addElement
+// @grant           GM_setValue
+// @grant           GM_getValue
 // @grant           unsafeWindow
 // @grant           GM_info
 // @run-at          document-end
@@ -29,8 +32,12 @@
 
   const updateMessage = `
       <strong>WHAT'S NEW :-</strong><br><br>
-      + Added 'Create School Zone using Drawline' shortcut: draw a line and a 10m-wide school zone is created automatically<br>
-      + Fixed a bug where typed primary name is missing when translation button is pressed<br>+ and other minor bug fixes and improvements.<br><br>
+      + Added Gemini translation as an alternative engine for POI names (choose Google or Gemini, with automatic fallback)<br>
+      + Translation now waits until you stop typing before sending the request<br>
+      + POI Translate success toast now shows which engine translated the name (Google or Gemini)<br>
+      + Added a "Get API" link next to the Gemini API Key input (opens Google AI Studio in a new tab)<br>
+      + Gemini now renders school names ("Basic School", "Lower Secondary School", "Primary School") as "आधारभूत विद्यालय" in Nepali<br>
+      + Minor UI alignment fixes for the POI item rows<br>+ and other minor bug fixes and improvements.<br><br>
   `;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
@@ -552,6 +559,11 @@
   let poiTranslationButtonLabel = 'ने.'; // Default Nepal button label
   let poiTranslationLocaleName = 'Nepali'; // Default Nepal locale name
   let poiTranslationSpecialRules = []; // Pre-translation regex rules
+  let poiTranslationProvider = 'google';      // 'google' | 'gemini' — which engine to try first
+  let poiTranslationFallback = true;          // if the primary engine fails, fall back to the other
+  let geminiApiKey = '';                      // stored in Tampermonkey storage (GM_getValue/GM_setValue)
+  let geminiModel = 'gemini-3.5-flash-lite';  // Google Gemini model id
+  let poiLastTranslationEngine = '';          // 'google' | 'gemini' — engine that produced the last successful result
   // Load POI translation settings from localStorage
   try {
     const storedActive = localStorage.getItem('wme-poi-shortcuts-poi-translate-enabled');
@@ -565,7 +577,14 @@
         poiTranslationLocaleName = found.name;
       }
     }
+    const storedProvider = localStorage.getItem('wme-poi-shortcuts-poi-translate-provider');
+    if (storedProvider === 'google' || storedProvider === 'gemini') poiTranslationProvider = storedProvider;
+    const storedFallback = localStorage.getItem('wme-poi-shortcuts-poi-translate-fallback');
+    if (storedFallback !== null) poiTranslationFallback = storedFallback === 'true';
   } catch (e) { /* ignore */ }
+  try {
+    geminiApiKey = GM_getValue('wme-poi-shortcuts-gemini-api-key', '');
+  } catch (e) { geminiApiKey = ''; }
 
   let GLE = {
     enabled: gleEnabled,
@@ -887,7 +906,7 @@
     const getLocalizedCategoryName = (categoryId) => mainCategoryMap.get(categoryId) || categoryId;
     const getLocalizedSubCategoryName = (subCategoryId) => subCategoryMap.get(subCategoryId) || subCategoryId;
 
-    let html = `<select id="poiItem${itemNumber}" style="font-size:10px;height:20px;width:100%;max-width:200px;margin:2px 0;">`;
+    let html = `<select id="poiItem${itemNumber}" style="font-size:10px;height:20px;width:100%;max-width:200px;margin:2px 0 2px 4px;">`;
     VENUE_CATEGORIES.forEach((cat) => {
       const categoryName = getLocalizedCategoryName(cat.key);
       html += `<option value="${cat.key}" data-icon="${cat.icon}" style="font-weight:bold;">${categoryName}</option>`;
@@ -919,9 +938,9 @@
     var $section = $('<div>', { style: 'padding:4px 8px;font-size:10px;', id: 'poiPlaceCat' + itemNumber });
     $section.html(
       [
-        `<span style="font-size:10px;font-weight:bold;">Item ${itemNumber}</span>`,
+        `<span style="font-size:10px;font-weight:bold;padding-left:4px;">Item ${itemNumber}</span>`,
         buildItemList(itemNumber),
-        `<div style="display:flex;align-items:center;gap:6px;margin:3px 0 0 0;">
+        `<div style="display:flex;align-items:center;gap:6px;margin:3px 0 0 0;padding-left:4px;">
             <label style="font-size:10px;min-width:28px;">Lock</label> ${buildLockLevelDropdown(itemNumber)}
             <label style="font-size:10px;min-width:40px;">Geometry</label> ${buildGeometryTypeDropdown(itemNumber)}
         </div>`,
@@ -951,6 +970,19 @@
       <select id="_selPOITranslateLocale" style="margin-left:4px;font-size:10px;height:20px;width:100px;">
         ${UNIQUE_TRANSLATION_LOCALES.map(l => `<option value="${l.code}" ${l.code === poiTranslationTargetLanguage ? 'selected' : ''}>${l.label}</option>`).join('')}
       </select>
+      <select id="_selPOITranslateProvider" style="margin-left:4px;font-size:10px;height:20px;width:110px;" title="Translation engine">
+        <option value="google" ${poiTranslationProvider === 'google' ? 'selected' : ''}>Google</option>
+        <option value="gemini" ${poiTranslationProvider === 'gemini' ? 'selected' : ''}>Gemini</option>
+      </select>
+      <label style="font-size:10px; font-weight:bold; margin-top:4px; display:inline-block;">
+        <input type="checkbox" id="_cbPOITranslateFallback" ${poiTranslationFallback ? 'checked' : ''} /> Fallback to other engine
+      </label>
+      <br>
+      <label style="font-size:10px; font-weight:bold; margin-top:4px; display:inline-block;">
+        Gemini API Key:
+        <input type="text" id="_inputGeminiApiKey" placeholder="paste key" style="width:150px; margin-left:4px; -webkit-text-security: disc;" />
+      </label>
+      <a href="https://aistudio.google.com/api-keys" target="_blank" rel="noopener noreferrer" title="Get a free Gemini API key from Google AI Studio (opens in a new tab)" style="font-size:10px; margin-left:6px; color:#4a90d9; text-decoration:underline;">Get API</a>
       <br>
       <label style="font-size:10px; font-weight:bold; margin-top:4px; display:inline-block;">
         School Zone SL: <input type="number" id="_inputSchoolZoneSpeedLimit" value="${schoolZoneSpeedLimit}" min="1" max="100" style="width:50px; margin-left:4px;" />
@@ -3697,7 +3729,23 @@
         }
       }
     } catch (e) { /* ignore */ }
-    Logger.info(`POI Translation settings: active=${poiTranslationActive}, targetLang="${poiTranslationTargetLanguage}", localeName="${poiTranslationLocaleName}", buttonLabel="${poiTranslationButtonLabel}"`);
+    Logger.info(`POI Translation settings: active=${poiTranslationActive}, targetLang="${poiTranslationTargetLanguage}", localeName="${poiTranslationLocaleName}", buttonLabel="${poiTranslationButtonLabel}", provider="${poiTranslationProvider}", fallback=${poiTranslationFallback}`);
+  }
+
+  /**
+   * Persist POI translation provider/fallback settings and the Gemini API key.
+   * Provider/fallback live in localStorage; the API key is stored in
+   * Tampermonkey's sandboxed storage (GM_setValue/GM_getValue) so it never
+   * appears in localStorage/devtools.
+   */
+  function savePOITranslationSettings() {
+    try {
+      localStorage.setItem('wme-poi-shortcuts-poi-translate-provider', poiTranslationProvider);
+      localStorage.setItem('wme-poi-shortcuts-poi-translate-fallback', JSON.stringify(poiTranslationFallback));
+    } catch (e) { Logger.error('Could not save POI translation provider settings:', e); }
+    try {
+      GM_setValue('wme-poi-shortcuts-gemini-api-key', geminiApiKey);
+    } catch (e) { Logger.error('Could not save Gemini API key:', e); }
   }
 
   // Hardcoded post-translation cleanup rules (applied after any sheet-loaded rules)
@@ -3705,11 +3753,15 @@
   const HARDCODED_POST_RULES = [
     { regex: /(^|\s)मावि(?=\s|$)/g, replace: '$1माध्यमिक विद्यालय' },
     { regex: /(^|\s)कुटीज(?=\s|$)/g, replace: '$1कटेज' },
+    { regex: /(^|\s)बेसिक स्कुल(?=\s|$)/g, replace: '$1आधारभूत विद्यालय' },
+    { regex: /(^|\s)स्कुल(?=\s|$)/g, replace: '$1विद्यालय' },
   ];
 
   /**
-   * Translate POI name to the target language (Nepali by default)
-   * Uses Google Translate API with pre/post processing rules.
+   * Translate POI name to the target language (Nepali by default).
+   * Unified entry point: applies shared pre/post-processing once, then routes to
+   * the selected translation engine (Google or Gemini) via _runTranslateEngines,
+   * which switches primary engine and falls back to the other on failure.
    */
   async function translatePOIName(text) {
     if (!text || !text.trim()) return text;
@@ -3754,9 +3806,76 @@
       }
     }
 
-    try {
-      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${poiTranslationTargetLanguage}&dt=t&q=${encodeURIComponent(tokenized)}`;
-      return await new Promise((resolve) => {
+    // Unified engine call: switch primary + automatic fallback
+    const translated = await _runTranslateEngines(tokenized, sourceLang, poiTranslationTargetLanguage);
+
+    // Restore tokens
+    const restored = translated.replace(/__TOKEN_(\d+)__/g, (_, i) => tokens[+i] || '');
+
+    // Apply hardcoded post-translation correction rules
+    let final = restored;
+    for (const rule of HARDCODED_POST_RULES) {
+      try {
+        const regex = rule.regex instanceof RegExp ? rule.regex : new RegExp(rule.regex, 'g');
+        final = final.replace(regex, rule.replace);
+      } catch (e) {
+        Logger.warn('Invalid regex in POI translation post-rule:', rule, e);
+      }
+    }
+
+    Logger.info(`Translation result for "${text}": "${final}"`);
+    return final;
+  }
+
+  /**
+   * Unified dispatcher — engine switching with automatic fallback.
+   * Tries the selected provider first; if it returns no usable translation
+   * (error, empty, or echoing the input back), falls back to the other engine
+   * when poiTranslationFallback is enabled. If everything fails, returns the
+   * last raw result (or the input) so callers' existing "unchanged" checks hold.
+   */
+  async function _runTranslateEngines(text, sourceLang, targetLang) {
+    const primary = poiTranslationProvider === 'gemini' ? 'gemini' : 'google';
+    const order = primary === 'gemini' ? ['gemini', 'google'] : ['google', 'gemini'];
+
+    let lastRaw = null;
+    let lastReason = '';
+    for (let i = 0; i < order.length; i++) {
+      const engine = order[i];
+      if (i > 0 && !poiTranslationFallback) break;      // fallback disabled → only primary
+      if (engine === 'gemini' && !geminiApiKey) {       // no key → skip Gemini silently
+        lastReason = 'Gemini API key not set';
+        continue;
+      }
+
+      const result = engine === 'gemini'
+        ? await _geminiTranslate(text, sourceLang, targetLang)
+        : await _googleTranslate(text, sourceLang);
+
+      // A real translation differs from the input; anything else is treated as a
+      // miss (error/empty/echo) so we can fall back to the other engine.
+      if (result && result !== text) {
+        poiLastTranslationEngine = engine;   // remember which engine actually produced this result
+        Logger.info(`POI translation succeeded via ${engine}`);
+        return result;
+      }
+      lastRaw = result;
+      lastReason = `${engine} returned no usable translation`;
+    }
+
+    poiLastTranslationEngine = '';           // no engine produced a usable translation
+    Logger.warn(`All POI translate engines failed (${lastReason})`);
+    return lastRaw || text;
+  }
+
+  /**
+   * Google Translate engine — free key-less endpoint.
+   * Resolves with the unchanged input on any failure so the dispatcher's
+   * "result === input → miss" fallback logic kicks in.
+   */
+  function _googleTranslate(text, sourceLang) {
+    return new Promise((resolve) => {
+      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${poiTranslationTargetLanguage}&dt=t&q=${encodeURIComponent(text)}`;
         GM_xmlhttpRequest({
           method: 'GET',
           url,
@@ -3771,37 +3890,75 @@
             if (typeof res === 'string') {
               try { res = JSON.parse(res); } catch { /* ignore */ }
             }
-            let translated = Array.isArray(res) && Array.isArray(res[0])
+          const translated = Array.isArray(res) && Array.isArray(res[0])
               ? res[0].map((seg) => (Array.isArray(seg) ? seg[0] : '')).join('')
-              : (res?.[0]?.[0]?.[0] ?? tokenized);
+            : (res?.[0]?.[0]?.[0] ?? text);
+          resolve(translated);
+        },
+        onerror() {
+          Logger.error('POI Translate API network error');
+          resolve(text);
+        },
+      });
+    });
+  }
 
-            // Restore tokens
-            translated = translated.replace(/__TOKEN_(\d+)__/g, (_, i) => tokens[+i] || '');
+  /**
+   * Gemini engine — uses the REST generateContent endpoint with a prompt
+   * instructing strict translation for Waze place names (brands preserved).
+   * Resolves with the unchanged input on failure so the dispatcher falls back.
+   */
+   /*- Do NOT translate brand names or proper nouns (e.g. "Shell", "NOC", "BYD"). */
+  function _geminiTranslate(text, sourceLang, targetLang) {
+    return new Promise((resolve) => {
+      if (!geminiApiKey) {
+        resolve(text);
+        return;
+      }
+      const sourceHint = (sourceLang && sourceLang !== 'auto') ? ` from ${sourceLang}` : '';
+      // Nepali-specific school naming rule: "Basic School", "Lower Secondary School" and
+      // "Primary School" must all be rendered as "आधारभूत विद्यालय" in Nepali.
+      const schoolRule = targetLang === 'ne'
+        ? '\n- Translate "Basic School", "Lower Secondary School" and "Primary School" as "आधारभूत विद्यालय".'
+        : '';
+      const prompt =
+`You are a strict translator for Waze map place names.
+Translate the following text${sourceHint} into ${targetLang}.
+- Preserve any placeholders exactly as written, like __TOKEN_0__.
+- Keep numbers and symbols unchanged.${schoolRule}
+- Return ONLY the translated text, no quotes, no explanation.
 
-            Logger.info(`Translation result for "${text}": "${translated}"`);
+Text: "${text}"`;
 
-            // Apply hardcoded post-translation correction rules
-            for (const rule of HARDCODED_POST_RULES) {
-              try {
-                const regex = rule.regex instanceof RegExp ? rule.regex : new RegExp(rule.regex, 'g');
-                translated = translated.replace(regex, rule.replace);
-              } catch (e) {
-                Logger.warn('Invalid regex in POI translation post-rule:', rule, e);
-              }
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${encodeURIComponent(geminiApiKey)}`;
+      GM_xmlhttpRequest({
+        method: 'POST',
+        url,
+        headers: { 'Content-Type': 'application/json' },
+        data: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.2, maxOutputTokens: 200 },
+        }),
+        responseType: 'json',
+        onload(response) {
+          if (response.status < 200 || response.status >= 300) {
+            Logger.error('Gemini HTTP error:', response.status);
+            resolve(text);
+            return;
+          }
+          let res = response.response;
+          if (typeof res === 'string') {
+            try { res = JSON.parse(res); } catch { /* ignore */ }
             }
-
-            resolve(translated);
+          const out = res?.candidates?.[0]?.content?.parts?.map((p) => p.text).join('') || '';
+          resolve(out.trim() ? out.trim() : text);
           },
           onerror() {
-            Logger.error('POI Translate API network error');
+          Logger.error('Gemini network error');
             resolve(text);
           },
         });
       });
-    } catch (e) {
-      Logger.error('POI Translation exception:', e);
-      return text;
-    }
   }
 
   /**
@@ -3905,9 +4062,16 @@
 
     const translateBtn = container.querySelector('#poi-translate-btn');
 
-    // Show live translation suggestion as user types (debounced, matching Road Name Helper pattern)
+    // Show live translation suggestion once the user STOPS typing (idle debounce).
+    // The timer resets on every keystroke, so no API call fires until the user has
+    // paused long enough (SUGGEST_IDLE_DELAY) to be "done" typing. This matters for
+    // paid engines (Gemini) — it prevents burning a request on every intermediate
+    // keystroke. A sequence counter also drops stale responses that resolve after
+    // the user has typed more text.
+    const SUGGEST_IDLE_DELAY = 1200; // ms of idle before we translate the current value
     let suggestTimeout;
     let lastSuggestValue = '';
+    let suggestRequestSeq = 0; // bumps on every input → used to drop stale responses
 
     async function updateTranslationSuggestion() {
       const currentValue = shadowInput.value.trim();
@@ -3917,12 +4081,17 @@
         lastSuggestValue = '';
         return;
       }
-      // Avoid duplicate requests for same value
+      // Avoid duplicate requests for the same value
       if (currentValue === lastSuggestValue) return;
       lastSuggestValue = currentValue;
+
+      const mySeq = ++suggestRequestSeq;
       suggestionSpan.textContent = 'Translating...';
       container.className = 'check';
       const translated = await translatePOIName(currentValue);
+      // If the user typed more while this request was in flight, discard the result
+      // (a newer request with a higher seq will render instead).
+      if (mySeq !== suggestRequestSeq) return;
       Logger.info(`Suggestion for "${currentValue}": "${translated}"`);
       if (translated && translated !== currentValue) {
         suggestionSpan.textContent = translated;
@@ -3934,8 +4103,9 @@
     }
 
     shadowInput.addEventListener('input', () => {
+      // Reset the idle timer on every keystroke — only translate after typing pauses.
       clearTimeout(suggestTimeout);
-      suggestTimeout = setTimeout(updateTranslationSuggestion, 350);
+      suggestTimeout = setTimeout(updateTranslationSuggestion, SUGGEST_IDLE_DELAY);
     });
     // Initial suggestion
     updateTranslationSuggestion();
@@ -3948,12 +4118,15 @@
       // Reuse the already-translated text from the suggestion span if available
       const cachedSuggestion = suggestionSpan.textContent.trim();
       let translated;
+      let engineUsed = '';   // which engine produced the translation shown in the toast
       if (cachedSuggestion && cachedSuggestion !== 'Translating...' && cachedSuggestion !== currentValue) {
         translated = cachedSuggestion;
+        engineUsed = poiLastTranslationEngine;
       } else {
         this.disabled = true;
         this.textContent = 'Translating...';
         translated = await translatePOIName(currentValue);
+        engineUsed = poiLastTranslationEngine;   // capture immediately to avoid races with in-flight requests
         this.innerHTML = `<i class="fa fa-language" aria-hidden="true" style="font-size:14px;"></i> ${poiTranslationButtonLabel}`;
         this.disabled = false;
       }
@@ -3989,8 +4162,11 @@
         // Add the translation as a new alias, preserving the current primary name
         aliases.push(translated);
         await wmeSDK.DataModel.Venues.updateVenue({ venueId, name: currentName, aliases });
-        Logger.info(`Added ${poiTranslationLocaleName} alias "${translated}" to venue ${venueId}`);
-        WazeToastr.Alerts.success('POI Translate', `Added ${poiTranslationLocaleName} alias: "${translated}"`, false, false, 3000);
+        // Friendly label for the engine that actually produced the translation
+        const engineLabel = engineUsed === 'gemini' ? 'Gemini' : engineUsed === 'google' ? 'Google' : '';
+        const engineSuffix = engineLabel ? ` (via ${engineLabel})` : '';
+        Logger.info(`Added ${poiTranslationLocaleName} alias "${translated}" to venue ${venueId}${engineSuffix}`);
+        WazeToastr.Alerts.success('POI Translate', `Added ${poiTranslationLocaleName} alias: "${translated}"${engineSuffix}`, false, false, 3000);
       } catch (err) {
         Logger.error('Failed to add translated alias:', err);
         WazeToastr.Alerts.error('POI Translate', `Failed to add alias: ${err.message}`, false, false, 3000);
@@ -4247,6 +4423,43 @@
             }
           });
         }
+
+        // Add event listener for POI Translate engine/provider dropdown
+        const selPOITranslateProvider = document.getElementById('_selPOITranslateProvider');
+        if (selPOITranslateProvider) {
+          selPOITranslateProvider.value = poiTranslationProvider;
+          selPOITranslateProvider.addEventListener('change', function () {
+            poiTranslationProvider = this.value;
+            savePOITranslationSettings();
+            Logger.info(`POI Translate provider set to: ${poiTranslationProvider}`);
+            // Re-run the current suggestion so it uses the new provider
+            const container = document.getElementById('poi-translate-container');
+            const btn = container ? container.querySelector('#poi-translate-btn') : null;
+            if (btn) btn.click();
+          });
+        }
+
+        // Add event listener for POI Translate fallback checkbox
+        const cbPOITranslateFallback = document.getElementById('_cbPOITranslateFallback');
+        if (cbPOITranslateFallback) {
+          cbPOITranslateFallback.checked = !!poiTranslationFallback;
+          cbPOITranslateFallback.addEventListener('change', function () {
+            poiTranslationFallback = this.checked;
+            savePOITranslationSettings();
+            Logger.info(`POI Translate fallback ${this.checked ? 'enabled' : 'disabled'}`);
+          });
+        }
+
+        // Add event listener for Gemini API key input
+        const inputGeminiApiKey = document.getElementById('_inputGeminiApiKey');
+        if (inputGeminiApiKey) {
+          inputGeminiApiKey.value = geminiApiKey;
+          inputGeminiApiKey.addEventListener('change', function () {
+            geminiApiKey = this.value.trim();
+            savePOITranslationSettings();
+            Logger.info(geminiApiKey ? 'Gemini API key saved.' : 'Gemini API key cleared.');
+          });
+        }
       }, 0);
     } catch (e) {
       console.error('Failed to register POI Shortcuts script tab:', e);
@@ -4330,6 +4543,23 @@
   Logger.info(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
+  2026.09.12.001
+  - Gemini translation: added a Nepali school naming rule so "Basic School",
+    "Lower Secondary School" and "Primary School" are translated as "आधारभूत विद्यालय"
+    (applies only when the target language is Nepali).
+  2026.09.11.001
+  - POI Translate success notification now shows which engine produced the translation
+    (Google or Gemini), including when the automatic fallback engine was used.
+  - Added a "Get API" hyperlink with tooltip next to the Gemini API Key input in settings,
+    opening https://aistudio.google.com/api-keys in a new tab.
+  - Minor UI alignment fix for the POI item rows (label, category dropdown and Lock/Geometry row).
+  2026.09.10.001
+  - Added Gemini translation as an alternative engine for POI name translation (Beta):
+    * Provider dropdown (Google / Gemini) with automatic fallback to the other engine
+    * Gemini API key stored securely via Tampermonkey storage (GM_setValue/GM_getValue)
+    * Uses Gemini 3.5 Flash-Lite via the REST generateContent endpoint
+  - Live suggestion now waits until you stop typing (idle debounce) before sending a request,
+    with a stale-response guard so out-of-order results never overwrite newer text.
   2026.07.31.001
   - Added 'Create School Zone using Drawline' shortcut: draw a line and a 10m-wide school zone is created automatically
   2026.07.30.001
