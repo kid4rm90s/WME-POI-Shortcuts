@@ -43,7 +43,7 @@
   `;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
-  const downloadUrl = 'https://github.com/kid4rm90s/WME-POI-Shortcuts/raw/refs/heads/LegacyShortcuts/wme-poi-shortcuts-Beta.user.js';
+  const downloadUrl = 'https://github.com/kid4rm90s/WME-POI-Shortcuts/raw/refs/heads/LegacyShortcuts/WME-POI-Shortcuts-Beta.user.js';
   const forumURL = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/feedback';
 
   // Global SDK instance — assigned in initScript() after SDK_INITIALIZED resolves
