@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts Beta
 // @namespace       https://greasyfork.org/users/1087400
-// @version         2026.09.29.002
+// @version         2026.09.29.003
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
