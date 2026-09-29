@@ -22,6 +22,8 @@
 // @require         https://greasyfork.org/scripts/523706/code/Link%20Enhancer.js
 // @require         https://cdn.jsdelivr.net/gh/TheEditorX/wme-sdk-plus@0b212bcaddf3e7983b28b220d120e0dd687a74d1/wme-sdk-plus.js
 // @connect raw.githubusercontent.com
+// @downloadURL https://raw.githubusercontent.com/kid4rm90s/WME-POI-Shortcuts/LegacyShortcuts/WME-POI-Shortcuts-Beta.user.js
+// @updateURL https://raw.githubusercontent.com/kid4rm90s/WME-POI-Shortcuts/LegacyShortcuts/WME-POI-Shortcuts-Beta.user.js
 
 // ==/UserScript==
 
@@ -43,7 +45,7 @@
   `;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
-  const downloadUrl = 'https://github.com/kid4rm90s/WME-POI-Shortcuts/raw/refs/heads/LegacyShortcuts/WME-POI-Shortcuts-Beta.user.js';
+  const downloadUrl = 'https://raw.githubusercontent.com/kid4rm90s/WME-POI-Shortcuts/LegacyShortcuts/WME-POI-Shortcuts-Beta.user.js';
   const forumURL = 'https://greasyfork.org/scripts/545278-wme-poi-shortcuts/feedback';
 
   // Global SDK instance — assigned in initScript() after SDK_INITIALIZED resolves
