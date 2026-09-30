@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts Beta
 // @namespace       https://greasyfork.org/users/1087400
-// @version         2026.09.29.011
+// @version         2026.09.30.003
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -956,7 +956,9 @@
     const getLocalizedCategoryName = (categoryId) => mainCategoryMap.get(categoryId) || categoryId;
     const getLocalizedSubCategoryName = (subCategoryId) => subCategoryMap.get(subCategoryId) || subCategoryId;
 
-    let html = `<select id="poiItem${itemNumber}" style="font-size:10px;height:20px;width:100%;max-width:200px;margin:2px 0 2px 4px;">`;
+    // Sizing comes from the injected stylesheet; only the width is worth keeping inline,
+    // because the slot/field widths differ per row and are the one thing CSS cannot infer.
+    let html = `<select id="poiItem${itemNumber}">`;
     VENUE_CATEGORIES.forEach((cat) => {
       const categoryName = getLocalizedCategoryName(cat.key);
       html += `<option value="${cat.key}" data-icon="${cat.icon}" style="font-weight:bold;">${categoryName}</option>`;
@@ -970,7 +972,7 @@
   }
   function buildLockLevelDropdown(itemNumber) {
     // Show lock dropdown for all 10 items
-    let html = `<select id="poiLock${itemNumber}" style="margin-left:4px;font-size:10px;height:20px;width:35px;">`;
+    let html = `<select id="poiLock${itemNumber}" title="Lock level">`;
     for (let i = 0; i <= 4; i++) {
       html += `<option value="${i}">${i + 1}</option>`;
     }
@@ -979,71 +981,239 @@
   }
   function buildGeometryTypeDropdown(itemNumber) {
     // Dropdown for geometry type: Point or Area
-    return `<select id="poiGeom${itemNumber}" style="margin-left:4px;font-size:10px;height:20px;width:55px;">
+    return `<select id="poiGeom${itemNumber}" title="Geometry type">
         <option value="area">Area</option>
         <option value="point">Point</option>
     </select>`;
   }
+  /**
+   * One shortcut slot as a collapsible card.
+   *
+   * The category dropdown is moved into the header on init, so a folded card still shows
+   * what the slot is bound to — folding hides the Lock/Geometry rows, not the slot's
+   * identity. It is MOVED rather than cloned, so the `poiItem<i>` id and the listeners
+   * bound to it in initializeItemOptions() are untouched.
+   */
   function buildItemOption(itemNumber) {
-    var $section = $('<div>', { style: 'padding:4px 8px;font-size:10px;', id: 'poiPlaceCat' + itemNumber });
-    $section.html(
-      [
-        `<span style="font-size:10px;font-weight:bold;padding-left:4px;">Item ${itemNumber}</span>`,
-        buildItemList(itemNumber),
-        `<div style="display:flex;align-items:center;gap:6px;margin:3px 0 0 0;padding-left:4px;">
-            <label style="font-size:10px;min-width:28px;">Lock</label> ${buildLockLevelDropdown(itemNumber)}
-            <label style="font-size:10px;min-width:40px;">Geometry</label> ${buildGeometryTypeDropdown(itemNumber)}
-        </div>`,
-      ].join(' ')
-    );
-    return $section.html();
+    const collapsed = loadSlotCollapsed(itemNumber);
+    return `
+      <div class="wme-poi-card${collapsed ? ' wme-poi-collapsed' : ''}" id="poiPlaceCat${itemNumber}">
+        <div class="wme-poi-card-header" role="button" tabindex="0"
+             aria-expanded="${collapsed ? 'false' : 'true'}" data-slot="${itemNumber}"
+             title="Click to collapse / expand this shortcut">
+          <span class="wme-poi-caret">${collapsed ? '\u25B8' : '\u25BE'}</span>
+          <span class="wme-poi-card-title">${itemNumber}</span>
+          <span class="wme-poi-slot-select">${buildItemList(itemNumber)}</span>
+        </div>
+        <div class="wme-poi-card-body">
+          <div class="wme-poi-field-row">
+            <span class="wme-poi-field-label">Lock</span>
+            ${buildLockLevelDropdown(itemNumber)}
+            <span class="wme-poi-field-label wme-poi-field-label-wide">Geometry</span>
+            ${buildGeometryTypeDropdown(itemNumber)}
+          </div>
+        </div>
+      </div>`;
+  }
+
+  // Folded/expanded state of the shortcut cards. One object, keyed by slot number, so a
+  // corrupt or missing entry simply means "expanded" — the default, matching how the
+  // panel behaved before the cards were collapsible.
+  const POI_SLOT_COLLAPSED_KEY = 'wme-poi-shortcuts-slot-collapsed';
+
+  function loadSlotCollapsed(slotNumber) {
+    try {
+      const all = JSON.parse(localStorage.getItem(POI_SLOT_COLLAPSED_KEY)) || {};
+      return !!all[slotNumber];
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function saveSlotCollapsed(slotNumber, collapsed) {
+    try {
+      const all = JSON.parse(localStorage.getItem(POI_SLOT_COLLAPSED_KEY)) || {};
+      all[slotNumber] = collapsed;
+      localStorage.setItem(POI_SLOT_COLLAPSED_KEY, JSON.stringify(all));
+    } catch (e) {
+      // Storage blocked or full — folding is purely cosmetic, never block the UI on it.
+    }
+  }
+
+  /** Fold/unfold one card, keeping the caret and aria-expanded in step. */
+  function toggleSlotCollapsed(card, slotNumber) {
+    const collapsed = !card.classList.contains('wme-poi-collapsed');
+    card.classList.toggle('wme-poi-collapsed', collapsed);
+    const caret = card.querySelector('.wme-poi-caret');
+    if (caret) caret.textContent = collapsed ? '\u25B8' : '\u25BE';
+    const header = card.querySelector('.wme-poi-card-header');
+    if (header) header.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    saveSlotCollapsed(slotNumber, collapsed);
+  }
+
+  /**
+   * Styles for the POI Shortcuts sidebar tab and the school zone schedule panel.
+   * Injected once, keyed by id.
+   *
+   * Every colour is a WME CSS token with a light fallback, so the panel tracks the editor
+   * theme instead of hard-coding greys — which is what made the previous version show a
+   * light-grey header block on WME's dark column. Literal hex is used only for the status
+   * colours (the green "active" dot) per the theming contract.
+   */
+  function injectPOISidebarStyles() {
+    var css = [
+      // Root: resets what WME's global styles leak in. No font-family beyond inherit, so
+      // the panel reads as part of WME rather than pasted on top of it.
+      '#wme-poi-shortcuts-content { box-sizing: border-box; padding: 4px; font-family: inherit; font-size: 11px; line-height: 1.45; color: var(--content_default, #333); }',
+      '#wme-poi-shortcuts-content *, #wme-poi-shortcuts-content *::before, #wme-poi-shortcuts-content *::after { box-sizing: border-box; }',
+
+      // Header: crimson gradient, matching the Nepali GIS Layers panel so the two scripts
+      // read as one family. A fixed brand gradient is the one place a literal colour is
+      // intentional — it must not flip with the theme.
+      '.wme-poi-header { display: flex; align-items: center; gap: 6px; padding: 7px 9px; margin-bottom: 8px; border-radius: 6px; background: linear-gradient(135deg, #DC143C 0%, #7d0b22 100%); color: #fff; }',
+      '.wme-poi-header-title { flex: 1 1 auto; min-width: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.3px; color: #fff; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }',
+      '.wme-poi-header-version { flex: none; font-size: 9px; font-weight: 500; color: rgba(255, 255, 255, 0.9); }',
+
+      // Card. The header is a distinct bordered band, so it reads as the clickable row and
+      // the body below it as the content — that separation is what makes the category field
+      // obviously an editable control rather than part of the chrome.
+      '.wme-poi-card { margin-bottom: 6px; border: 1px solid var(--hairline, #dadce0); border-radius: 6px; background: var(--background_default, #fff); overflow: hidden; }',
+      '.wme-poi-card-header { display: flex; align-items: center; gap: 6px; padding: 5px 7px; border-left: 3px solid #29B6F6; background: var(--surface_default, #f8f9fa); cursor: pointer; user-select: none; }',
+      '.wme-poi-card-header:hover .wme-poi-card-title { text-decoration: underline; }',
+      // Inset the ring so it draws inside the band instead of around the whole card.
+      '.wme-poi-card-header:focus-visible { outline: 2px solid #29B6F6; outline-offset: -2px; }',
+      // The number is the slot's identity, so it is the brightest thing in the band and
+      // gets a fixed width to stop the dropdowns drifting between rows.
+      '.wme-poi-caret { flex: none; width: 8px; text-align: center; font-size: 9px; line-height: 1; color: #29B6F6; }',
+      '.wme-poi-card-title { flex: none; min-width: 14px; text-align: right; font-size: 11px; font-weight: 700; color: var(--content_p1, #202124); white-space: nowrap; }',
+      '.wme-poi-slot-select { flex: 1 1 auto; min-width: 0; }',
+      '.wme-poi-card-body { padding: 7px; border-top: 1px solid var(--hairline, #dadce0); }',
+      '.wme-poi-collapsed > .wme-poi-card-body { display: none; }',
+
+      // Field row: both labels share a width so the controls line up across cards.
+      '.wme-poi-field-row { display: flex; align-items: center; gap: 6px; }',
+      '.wme-poi-field-label { flex: none; min-width: 34px; font-size: 10px; color: var(--content_p2, #5f6368); }',
+      '.wme-poi-field-label-wide { min-width: 58px; }',
+      // The Lock/Geometry selects sit in a flex row; without this they stretch to the row
+      // height and the dropdown arrow drifts off-centre.
+      '.wme-poi-field-row > select { align-self: center; }',
+
+      // Native controls. Compound selectors + !important on the box properties are what
+      // beat WME's bare input/select element rules; accent-color is what themes a native
+      // checkbox instead of hand-drawing one.
+      '#wme-poi-shortcuts-content select { box-sizing: border-box; height: 22px; min-width: 0; padding: 0 4px; border: 1px solid var(--hairline, #dadce0); border-radius: 4px; background: var(--background_default, #fff); color: var(--content_default, #333); font-family: inherit; font-size: 10px; }',
+      '.wme-poi-slot-select > select { width: 100%; }',
+      // Lock / Geometry keep the compact widths they had inline before.
+      '.wme-poi-field-row > select[id^="poiLock"] { flex: none; width: 38px; }',
+      '.wme-poi-field-row > select[id^="poiGeom"] { flex: none; width: 62px; }',
+      '#wme-poi-shortcuts-content input[type="checkbox"] { width: 14px !important; height: 14px !important; min-width: 14px; margin: 0 !important; padding: 0 !important; accent-color: var(--primary, #0073e6); cursor: pointer; }',
+      '#wme-poi-shortcuts-content input[type="number"], #wme-poi-shortcuts-content input[type="text"] { box-sizing: border-box; padding: 3px 4px; border: 1px solid var(--hairline, #dadce0); border-radius: 4px; background: var(--background_default, #fff); color: var(--content_default, #333); font-family: inherit; font-size: 10px; }',
+
+      // Settings rows: label wraps its own control (no `for`), so there is never a
+      // double-toggle from a for-attribute plus a click handler.
+      '.wme-poi-setting { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; min-height: 18px; }',
+      '.wme-poi-setting > label { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 10px; color: var(--content_p1, #202124); cursor: pointer; user-select: none; }',
+      // Sub rows sit under their parent setting. The indent is the checkbox width + gap, so
+      // a sub row's first control lines up with the parent's label text.
+      '.wme-poi-sub { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0 0 6px 20px; }',
+      '.wme-poi-sub-label { flex: none; font-size: 10px; color: var(--content_p2, #5f6368); }',
+      // Bordered group for settings that belong together (the school zone numbers).
+      // Same vocabulary as the shortcut cards, one level down — including the cyan accent
+      // bar, so the accent reads as one system rather than two unrelated highlights.
+      '.wme-poi-box { padding: 6px 8px; margin: 0 0 6px; border: 1px solid var(--hairline, #dadce0); border-left: 3px solid #29B6F6; border-radius: 6px; background: var(--surface_default, #f8f9fa); }',
+      '.wme-poi-box-title { margin-bottom: 5px; font-size: 10px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; color: var(--content_p2, #5f6368); }',
+      '.wme-poi-box-row { display: flex; align-items: center; gap: 6px; }',
+      '.wme-poi-box-row + .wme-poi-box-row { margin-top: 5px; }',
+      '.wme-poi-box-row > .wme-poi-sub-label:first-child { min-width: 74px; }',
+      '.wme-poi-link { font-size: 10px; color: var(--primary, #0073e6); text-decoration: underline; }',
+      '.wme-poi-help { margin-top: 8px; font-size: 10px; font-style: italic; color: var(--content_p2, #5f6368); }',
+    ].join('\n');
+    injectCSSWithID('poi-sidebar-styles', css);
   }
   function buildAllItemOptions() {
     let html = '';
     for (let i = 1; i <= 10; i++) {
       html += buildItemOption(i);
     }
-    // Add checkboxes before the keyboard shortcuts message
+    // Settings, one control group per row. Every id is preserved, so the listeners in
+    // registerSidebarScriptTab() are untouched by this markup change.
     html += `
-    <div style="margin:12px 0 8px 0; padding:4px 8px; background:transparent; border-radius:4px;">
-      <label style="font-size:10px; font-weight:bold;">
+    <div class="wme-poi-setting">
+      <label>
         <input type="checkbox" id="_cbEnableGLE" ${GLE && GLE.enabled ? 'checked' : ''} /> Enable Google Link Enhancer
       </label>
-      <br>
-      <label style="font-size:10px; font-weight:bold; margin-top:4px; display:inline-block;">
+    </div>
+    <div class="wme-poi-setting">
+      <label>
         <input type="checkbox" id="_cbOpenEditAddressRPP" ${openEditAddressOnRPP ? 'checked' : ''} /> Open edit address when RPP selected
       </label>
-      <br>
-      <label style="font-size:10px; font-weight:bold; margin-top:4px; display:inline-block;">
+    </div>
+    <div class="wme-poi-setting">
+      <label>
         <input type="checkbox" id="_cbEnablePOITranslate" ${poiTranslationActive ? 'checked' : ''} /> Show Translate button for POI names
       </label>
-      <select id="_selPOITranslateLocale" style="margin-left:4px;font-size:10px;height:20px;width:100px;">
+    </div>
+    <div class="wme-poi-sub">
+      <select id="_selPOITranslateLocale">
         ${UNIQUE_TRANSLATION_LOCALES.map(l => `<option value="${l.code}" ${l.code === poiTranslationTargetLanguage ? 'selected' : ''}>${l.label}</option>`).join('')}
       </select>
-      <select id="_selPOITranslateProvider" style="margin-left:4px;font-size:10px;height:20px;width:110px;" title="Translation engine">
+      <select id="_selPOITranslateProvider" title="Translation engine">
         <option value="google" ${poiTranslationProvider === 'google' ? 'selected' : ''}>Google</option>
         <option value="gemini" ${poiTranslationProvider === 'gemini' ? 'selected' : ''}>Gemini</option>
       </select>
-      <label style="font-size:10px; font-weight:bold; margin-top:4px; display:inline-block;">
+    </div>
+    <div class="wme-poi-setting">
+      <label>
         <input type="checkbox" id="_cbPOITranslateFallback" ${poiTranslationFallback ? 'checked' : ''} /> Fallback to other engine
       </label>
-      <br>
-      <label style="font-size:10px; font-weight:bold; margin-top:4px; display:inline-block;">
-        Gemini API Key:
-        <input type="text" id="_inputGeminiApiKey" placeholder="paste key" style="width:150px; margin-left:4px; -webkit-text-security: disc;" />
-      </label>
-      <a href="https://aistudio.google.com/api-keys" target="_blank" rel="noopener noreferrer" title="Get a free Gemini API key from Google AI Studio (opens in a new tab)" style="font-size:10px; margin-left:6px; color:#4a90d9; text-decoration:underline;">Get API</a>
-      <br>
-      <label style="font-size:10px; font-weight:bold; margin-top:4px; display:inline-block;">
-        School Zone SL: <input type="number" id="_inputSchoolZoneSpeedLimit" value="${schoolZoneSpeedLimit}" min="1" max="100" style="width:50px; margin-left:4px;" />
-        <div style="margin-top:6px;">
-          School Zone Width (m): <input type="number" id="_inputSchoolZoneWidth" value="${schoolZoneWidth}" min="1" max="200" style="width:50px; margin-left:4px;" />
-        </div>
-      </label>
+    </div>
+    <div class="wme-poi-sub">
+      <span class="wme-poi-sub-label">Gemini API Key:</span>
+      <input type="text" id="_inputGeminiApiKey" placeholder="paste key" style="-webkit-text-security: disc;" />
+      <a class="wme-poi-link" href="https://aistudio.google.com/api-keys" target="_blank" rel="noopener noreferrer" title="Get a free Gemini API key from Google AI Studio (opens in a new tab)">Get API</a>
+    </div>
+    <div class="wme-poi-box">
+      <div class="wme-poi-box-title">School Zone</div>
+      <div class="wme-poi-box-row">
+        <span class="wme-poi-sub-label">Speed limit:</span>
+        <input type="number" id="_inputSchoolZoneSpeedLimit" value="${schoolZoneSpeedLimit}" min="1" max="100" style="width:50px;" />
+        <span class="wme-poi-sub-label">km/h</span>
+      </div>
+      <div class="wme-poi-box-row">
+        <span class="wme-poi-sub-label">Line width:</span>
+        <input type="number" id="_inputSchoolZoneWidth" value="${schoolZoneWidth}" min="1" max="200" style="width:50px;" />
+        <span class="wme-poi-sub-label">m</span>
+      </div>
     </div>`;
-    html += `<div style='font-size:10px;color:#888;margin-top:8px;'>You can bind keyboard shortcuts using WME's native shortcuts section.</div>`;
+    html += `<div class="wme-poi-help">You can bind keyboard shortcuts using WME's native shortcuts section.</div>`;
     setTimeout(() => {
       for (let i = 1; i <= 10; i++) {
+        // Move the category dropdown into the card header FIRST. It must happen before
+        // loadPOIShortcutItem() / _refreshPOIShortcut(), which read the control's value —
+        // re-parenting afterwards would have them touch a node mid-move. Moving is safe:
+        // the element keeps its id, value and any listeners.
+        const card = document.getElementById('poiPlaceCat' + i);
+        if (card) {
+          const slotHost = card.querySelector('.wme-poi-slot-select');
+          const itemSelect = document.getElementById('poiItem' + i);
+          if (slotHost && itemSelect) slotHost.appendChild(itemSelect);
+
+          const header = card.querySelector('.wme-poi-card-header');
+          if (header) {
+            header.addEventListener('click', function (ev) {
+              // Clicking the dropdown is a category change, not a fold request.
+              if (ev.target.closest('select')) return;
+              toggleSlotCollapsed(card, i);
+            });
+            header.addEventListener('keydown', function (ev) {
+              if (ev.key === 'Enter' || ev.key === ' ') {
+                ev.preventDefault();
+                toggleSlotCollapsed(card, i);
+              }
+            });
+          }
+        }
+
         loadPOIShortcutItem(i);
         // Sync the shortcut description with the currently-selected category in the dropdown
         _refreshPOIShortcut(i, wmeSDK);
@@ -5157,12 +5327,15 @@ Text: "${text}"`;
       const { tabLabel, tabPane } = await wmeSDK.Sidebar.registerScriptTab();
       // Add label/icon to the tab
       tabLabel.innerHTML = '<span style="display:flex;align-items:center;"><span style="font-size:16px;margin-right:4px;">⭐</span>POI Shortcuts</span>';
+      // All panel styling lives in one injected stylesheet, so the markup below stays
+      // readable and the colours track WME's theme instead of being inlined per element.
+      injectPOISidebarStyles();
       // Use buildAllItemOptions to show all 10 dropdowns with script info header
       tabPane.innerHTML = `
         <div id='wme-poi-shortcuts-content'>
-          <div style="padding: 8px 16px; background: #f5f5f5; border-bottom: 1px solid #ddd; margin-bottom: 10px;">
-            <div style="font-weight: bold; font-size: 14px; color: #333;">${scriptName}</div>
-            <div style="font-size: 12px; color: #666;">${scriptVersion}</div>
+          <div class="wme-poi-header">
+            <span class="wme-poi-header-title">${scriptName}</span>
+            <span class="wme-poi-header-version">v${scriptVersion}</span>
           </div>
           ${buildAllItemOptions()}
         </div>`;
@@ -5412,6 +5585,51 @@ Text: "${text}"`;
   Logger.info(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
+  2026.09.30.003
+  - Adopted the Nepali GIS Layers palette, so both scripts look like one family.
+    * Header is now the crimson gradient (#DC143C -> #7d0b22) with the version as plain
+      text instead of a pill.
+    * Card headers are a distinct band — a 3px cyan (#29B6F6) accent bar over the muted
+      surface colour — so the clickable header is clearly separate from the card body
+      underneath, and the category field reads as an editable control.
+    * Slot labels are now a bare number (1, 2, ...) rather than "ITEM 1"; the number is
+      the slot's identity so it is the brightest text in the band.
+    * The school zone box carries the same cyan accent bar, so the accent reads as one
+      system rather than two unrelated highlights.
+  2026.09.30.002
+  - Fixed the expanded shortcut cards looking cramped, and the focus ring drawing a box
+    around the whole card.
+    * The header/body gap was too tight when expanded, so Lock/Geometry crowded the
+      category dropdown. Both gaps are now 7px.
+    * The focus ring used a positive outline-offset on a full-width header, which drew a
+      box around the entire card. It is now inset (-2px) so it hugs the header row.
+    * The Lock/Geometry selects now align-self: center, so the dropdown arrow no longer
+      drifts when the row is taller than the control.
+  2026.09.30.001
+  - The school zone speed limit and line width are now grouped in a bordered box.
+    * Labelled "School Zone", with one row each, and the units (km/h, m) shown after the
+      field instead of packed into the label. Both field ids are unchanged, so the
+      existing listeners still work.
+  2026.09.29.014
+  - POI Shortcuts sidebar tab restyled to be theme-aware, and the 10 shortcut slots
+    became collapsible cards.
+    * The panel was built from ~40 inline styles with hardcoded colours (#f5f5f5, #ddd,
+      #333, #666, #888), so in WME's dark theme it showed a light-grey header block and
+      near-black text on a dark column. Every colour is now a WME CSS token with a light
+      fallback, so the panel follows the editor theme.
+    * Styling moved out of the markup into one injected stylesheet keyed by id, so the
+      palette can be changed without touching the builders.
+    * Each Item 1-10 is now a card with a collapsible body; the category dropdown sits in
+      the header, so a folded card still shows what the slot is bound to. Fold state per
+      slot is remembered in localStorage. All ten stay visible.
+    * The header is a gradient using --primary_variant → --primary, with the version in a
+      translucent pill.
+    * Setttings are one control group per row. Native checkboxes are themed with
+      accent-color instead of rendering WME's default blue, and every card header has a
+      focus-visible ring and is keyboard operable.
+    * Dropdowns no longer carry inline font-size/height/width; the stylesheet owns control
+      appearance and only the genuinely per-control widths stay inline.
+    * All element ids are unchanged, so no existing listener needed editing.
   2026.09.29.011
   - Fixed the schedule picker rejecting every choice as an invalid selection.
     * WazeToastr.Alerts.prompt()'s third parameter is the input's PREFILLED VALUE, not a
