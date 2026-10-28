@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts Beta
 // @namespace       https://greasyfork.org/users/1087400
-// @version         2026.09.30.003
+// @version         2026.10.29.001
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -9,7 +9,6 @@
 // @connect         greasyfork.org
 // @connect         translate.googleapis.com
 // @connect         generativelanguage.googleapis.com
-// @connect         waze.com
 // @grant           GM_xmlhttpRequest
 // @grant           GM_addElement
 // @grant           GM_setValue
@@ -36,6 +35,11 @@
 
   const updateMessage = `
       <strong>WHAT'S NEW :-</strong><br><br>
+      + New shortcut: <b>Create Map Comment Area</b> — draw an area and get a map comment<br>
+      + New shortcut: <b>Create Map Comment Area using Drawline</b> — draw a line, a corridor area is built from it<br>
+      + Set the corridor width in the POI Shortcuts sidebar tab (Map Comment → Line width)<br>
+      + Pick the lock level applied to new comments (Map Comment → Lock)<br>
+      + The new comment is selected automatically and left as an unsaved change for review<br>
       + School zones can now be given a recurring schedule automatically (set the schedule name in the POI Shortcuts sidebar tab)<br>
       + "Find Schedule ID" lists the schedules WME returns for your country — no need to know a GUID<br>
       + The schedule is verified against the map data model, so success means it actually stuck<br>
@@ -497,6 +501,8 @@
   let openEditAddressOnRPP = false;
   let schoolZoneSpeedLimit = 20; // Default speed limit for school zones, can be customized in settings
   let schoolZoneWidth = 10; // Default width (meters) of the drawn line when creating school zones via draw line
+  let mapCommentWidth = 10; // Default corridor width (meters) when creating a map comment area via draw line
+  let mapCommentLock = 0; // Lock rank (0-based) applied to new map comments; 0 = no lock
   let schoolZoneScheduleItemId = ''; // schedule NAME used to search WME's dropdown
   let schoolZoneScheduleResolvedId = ''; // the id picked from WME's schedule list
   // Which country the stored choice belongs to. A schedule is country-scoped, so a
@@ -533,6 +539,22 @@
     }
   } catch (e) {
     schoolZoneWidth = 10; // Default school zone line width if parsing fails
+  }
+  try {
+    const storedMapCommentWidth = parseInt(localStorage.getItem('wme-poi-shortcuts-map-comment-width'), 10);
+    if (!isNaN(storedMapCommentWidth) && storedMapCommentWidth > 0) {
+      mapCommentWidth = storedMapCommentWidth;
+    }
+  } catch (e) {
+    mapCommentWidth = 10; // Default map comment corridor width if parsing fails
+  }
+  try {
+    const storedMapCommentLock = parseInt(localStorage.getItem('wme-poi-shortcuts-map-comment-lock'), 10);
+    if (!isNaN(storedMapCommentLock) && storedMapCommentLock >= 0) {
+      mapCommentLock = storedMapCommentLock;
+    }
+  } catch (e) {
+    mapCommentLock = 0;
   }
   try {
     schoolZoneScheduleItemId = localStorage.getItem('wme-poi-shortcuts-school-zone-schedule-item-id') || '';
@@ -979,6 +1001,38 @@
     html += '</select>';
     return html;
   }
+
+  /**
+   * Highest lock rank (0-based) the logged-in editor may assign.
+   * Falls back to 4 (L5) when user info is not available yet.
+   * @returns {number}
+   */
+  function _getMaxAllowedLockRank() {
+    try {
+      const userInfo = wmeSDK && wmeSDK.State && wmeSDK.State.getUserInfo();
+      if (userInfo && typeof userInfo.rank === 'number' && !isNaN(userInfo.rank)) {
+        return Math.max(0, Math.min(userInfo.rank, 5));
+      }
+    } catch (e) { /* user info not ready — use fallback */ }
+    return 4;
+  }
+
+  /**
+   * Lock dropdown for new map comments. Values are 0-based lock ranks, matching
+   * the POI slot dropdown; options stop at the editor's own rank because
+   * MapComments.addComment validates lockRank against the user's rank.
+   * @returns {string} HTML for the select element.
+   */
+  function buildMapCommentLockDropdown() {
+    const maxRank = _getMaxAllowedLockRank();
+    const selectedRank = Math.min(Math.max(mapCommentLock, 0), maxRank);
+    let html = `<select id="_selMapCommentLock" title="Lock level">`;
+    for (let i = 0; i <= maxRank; i++) {
+      html += `<option value="${i}"${i === selectedRank ? ' selected' : ''}>${i + 1}</option>`;
+    }
+    html += '</select>';
+    return html;
+  }
   function buildGeometryTypeDropdown(itemNumber) {
     // Dropdown for geometry type: Point or Area
     return `<select id="poiGeom${itemNumber}" title="Geometry type">
@@ -1183,6 +1237,18 @@
         <span class="wme-poi-sub-label">Line width:</span>
         <input type="number" id="_inputSchoolZoneWidth" value="${schoolZoneWidth}" min="1" max="200" style="width:50px;" />
         <span class="wme-poi-sub-label">m</span>
+      </div>
+    </div>
+    <div class="wme-poi-box">
+      <div class="wme-poi-box-title">Map Comment</div>
+      <div class="wme-poi-box-row">
+        <span class="wme-poi-sub-label">Line width:</span>
+        <input type="number" id="_inputMapCommentWidth" value="${mapCommentWidth}" min="1" max="200" style="width:50px;" />
+        <span class="wme-poi-sub-label">m</span>
+      </div>
+      <div class="wme-poi-box-row">
+        <span class="wme-poi-sub-label">Lock:</span>
+        ${buildMapCommentLockDropdown()}
       </div>
     </div>`;
     html += `<div class="wme-poi-help">You can bind keyboard shortcuts using WME's native shortcuts section.</div>`;
@@ -2234,6 +2300,228 @@
   }
 
   /**
+   * Creates an area map comment from a GeoJSON Polygon geometry.
+   * The comment is added to the WME data model but NOT saved — the user reviews
+   * and edits it, then saves with WME's normal Save button.
+   * @param {Object} geometry A GeoJSON Polygon geometry.
+   * @returns {Object|null} The created MapComment, or null on failure.
+   */
+  function _createMapComment(geometry) {
+    try {
+      const args = {
+        subject: 'Area comment',
+        geometry: geometry,
+      };
+      // Lock is optional: 0 means "no explicit lock", mirroring the POI shortcuts.
+      const applyLock = !isNaN(mapCommentLock) && mapCommentLock > 0;
+      if (applyLock) args.lockRank = mapCommentLock;
+
+      let comment;
+      try {
+        comment = wmeSDK.DataModel.MapComments.addComment(args);
+      } catch (lockError) {
+        if (!applyLock) throw lockError;
+        // lockRank is validated against the user's rank — retry unlocked rather than fail.
+        Logger.warn('Lock level ' + (mapCommentLock + 1) + ' could not be applied, creating without lock:', lockError);
+        delete args.lockRank;
+        comment = wmeSDK.DataModel.MapComments.addComment(args);
+        try {
+          WazeToastr.Alerts.warning(scriptName, '<b>Map comment</b> created without the selected lock level (not permitted for your rank).', false, false, 4000);
+        } catch (e) { Logger.warn('WazeToastr.Alerts.warning failed:', e); }
+      }
+
+      Logger.info('Map comment created:', comment && comment.id);
+      try {
+        WazeToastr.Alerts.success(scriptName, '<b>Map comment</b> created', false, false, 2500);
+      } catch (e) { Logger.warn('WazeToastr.Alerts.success failed:', e); }
+      return comment || null;
+    } catch (error) {
+      Logger.error('Failed to create map comment:', error);
+      try {
+        WazeToastr.Alerts.error(scriptName, 'Failed to create <b>Map comment</b>: ' + error.message, false, false, 4000);
+      } catch (e) { Logger.warn('WazeToastr.Alerts.error failed:', e); }
+      return null;
+    }
+  }
+
+  /**
+   * Waits for WME's SDK to announce the new map comment in the data model.
+   * Uses the 'wme-data-model-objects-added' event (requires
+   * Events.trackDataModelEvents to be enabled for the 'mapComments' data model).
+   * Resolves with the added object id, or null on timeout.
+   * @param {number} timeoutMs How long to wait before giving up.
+   * @returns {Promise<string|number|null>} The added map comment id.
+   */
+  function _waitForMapCommentAdded(timeoutMs) {
+    return new Promise(function (resolve) {
+      var settled = false;
+      var timer = null;
+      var off = null;
+
+      function finish(id) {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        try {
+          if (typeof off === 'function') off();
+        } catch (e) { Logger.warn('Failed to unsubscribe from data model events:', e); }
+        resolve(id === undefined ? null : id);
+      }
+
+      try {
+        wmeSDK.Events.trackDataModelEvents({ dataModelName: 'mapComments' });
+      } catch (e) {
+        Logger.warn('Unable to track mapComments data model events:', e);
+      }
+
+      try {
+        off = wmeSDK.Events.on({
+          eventName: 'wme-data-model-objects-added',
+          eventHandler: function (payload) {
+            if (!payload || payload.dataModelName !== 'mapComments') return;
+            var ids = payload.objectIds || [];
+            if (!ids.length) return;
+            finish(ids[ids.length - 1]);
+          },
+        });
+      } catch (e) {
+        Logger.warn('Unable to listen for map comment added events:', e);
+      }
+
+      timer = setTimeout(function () { finish(null); }, timeoutMs || 2500);
+    });
+  }
+
+  /**
+   * Selects a map comment so WME opens its editor panel. WME can drop a selection
+   * that is applied while the drawing mode is still winding down, so the selection
+   * is re-applied a couple of times afterwards.
+   * @param {string|number} commentId The map comment id.
+   * @param {number} [retries] Remaining re-selection attempts.
+   */
+  function _selectMapComment(commentId, retries) {
+    if (commentId === undefined || commentId === null) return;
+    if (retries === undefined) retries = 2;
+    // setSelection validates ids as strings — the SDK returns numeric map comment ids.
+    const selectionId = String(commentId);
+    try {
+      wmeSDK.Editing.setSelection({ selection: { objectType: 'mapComment', ids: [selectionId] } });
+      Logger.info('Map comment selected:', selectionId);
+    } catch (error) {
+      Logger.warn('Unable to select the new map comment:', error);
+      return;
+    }
+    if (retries > 0) {
+      setTimeout(function () {
+        var selection = null;
+        try {
+          selection = wmeSDK.Editing.getSelection();
+        } catch (e) { /* ignore */ }
+        var stillSelected = selection
+          && selection.objectType === 'mapComment'
+          && selection.ids
+          && selection.ids.length === 1
+          && String(selection.ids[0]) === selectionId;
+        if (!stillSelected) _selectMapComment(commentId, retries - 1);
+      }, 300);
+    }
+  }
+
+  /**
+   * Converts a drawn LineString into a closed polygon corridor of the configured width.
+   * @param {Object} lineGeometry A GeoJSON LineString geometry.
+   * @returns {Object|null} A GeoJSON Polygon geometry (largest part when buffering
+   *                        splits the line into a MultiPolygon).
+   */
+  function _lineToCommentPolygon(lineGeometry) {
+    const coords = (lineGeometry && lineGeometry.coordinates) || [];
+    if (coords.length < 2) {
+      throw new Error('The drawn line is too short — draw at least two points.');
+    }
+    const buffered = turf.buffer(lineGeometry, mapCommentWidth / 2, { units: 'meters' });
+    if (!buffered || !buffered.geometry) {
+      throw new Error('Could not build an area from the drawn line.');
+    }
+    if (buffered.geometry.type === 'MultiPolygon') {
+      // A self-intersecting line can split the buffer — keep the largest part.
+      let largest = null;
+      let largestArea = -1;
+      buffered.geometry.coordinates.forEach(function (rings) {
+        const part = turf.polygon(rings);
+        const area = turf.area(part);
+        if (area > largestArea) { largestArea = area; largest = part; }
+      });
+      return largest ? largest.geometry : null;
+    }
+    return buffered.geometry;
+  }
+
+  /**
+   * Guarantees every ring of a Polygon geometry is closed (first point == last point),
+   * which WME requires for map comment areas.
+   * @param {Object} polygonGeometry A GeoJSON Polygon geometry.
+   * @returns {Object} A GeoJSON Polygon geometry with closed rings.
+   */
+  function _ensureClosedPolygon(polygonGeometry) {
+    if (!polygonGeometry || polygonGeometry.type !== 'Polygon' || !Array.isArray(polygonGeometry.coordinates)) {
+      return polygonGeometry;
+    }
+    const rings = polygonGeometry.coordinates.map(function (ring) {
+      if (!ring || !ring.length) return ring;
+      const first = ring[0];
+      const last = ring[ring.length - 1];
+      if (first[0] === last[0] && first[1] === last[1]) return ring;
+      return ring.concat([[first[0], first[1]]]);
+    });
+    return { type: 'Polygon', coordinates: rings };
+  }
+
+  /**
+   * Builds the shortcut callback that draws on the map and creates an area map comment.
+   * @param {string} drawMode 'polygon' (draw an area) or 'line' (draw a line buffered into an area).
+   * @returns {Function} Shortcut callback.
+   */
+  function _buildMapCommentCallback(drawMode) {
+    return function () {
+      const isLineMode = drawMode === 'line';
+      try {
+        WazeToastr.Alerts.info(scriptName, isLineMode
+          ? 'Draw the <b>Map comment</b> line on the map'
+          : 'Draw the <b>Map comment</b> area on the map', false, false, 3000);
+      } catch (e) { Logger.warn('WazeToastr.Alerts.info failed:', e); }
+
+      const drawPromise = isLineMode ? wmeSDK.Map.drawLine() : wmeSDK.Map.drawPolygon();
+      drawPromise.then(function (drawn) {
+        try {
+          const drawnGeometry = drawn && drawn.geometry ? drawn.geometry : drawn;
+          const geometry = isLineMode
+            ? _lineToCommentPolygon(drawnGeometry)
+            : _ensureClosedPolygon(drawnGeometry);
+          if (!geometry) return;
+          // Subscribe BEFORE adding so we cannot miss the data model event, then
+          // re-select the comment once WME announces it (the drawing flow clears
+          // the selection). Falls back to the addComment() return id on timeout.
+          const addedPromise = _waitForMapCommentAdded(2500);
+          const comment = _createMapComment(geometry);
+          addedPromise.then(function (addedId) {
+            const commentId = addedId !== null && addedId !== undefined
+              ? addedId
+              : (comment && comment.id);
+            _selectMapComment(commentId);
+          });
+        } catch (error) {
+          Logger.error('Failed to create map comment:', error);
+          try {
+            WazeToastr.Alerts.error(scriptName, 'Failed to create <b>Map comment</b>: ' + error.message, false, false, 4000);
+          } catch (e) { Logger.warn('WazeToastr.Alerts.error failed:', e); }
+        }
+      }).catch(function (error) {
+        Logger.info('Map comment drawing was cancelled or failed:', error);
+      });
+    };
+  }
+
+  /**
    * Dynamic re-registration — updates a POI shortcut's description when the user
    * changes the category in the sidebar dropdown.
    * Re-registers ALL shortcuts in order so they maintain their position in
@@ -2438,6 +2726,9 @@
     { id: 'WMEPOI_narrow-bridge', description: 'Create Narrow Bridge', settingsKey: 'NarrowBridgeShortcut', callback: _buildHazardCallback('narrow-bridge') },
     { id: 'WMEPOI_both-lanes-ending', description: 'Create Lane End (abrupt)', settingsKey: 'LaneEndingShortcut', callback: _buildHazardCallback('both-lanes-ending') },
     { id: 'WMEPOI_both-shoulders-ending', description: 'Create Shoulder End (abrupt)', settingsKey: 'ShoulderEndingShortcut', callback: _buildHazardCallback('both-shoulders-ending') },
+    // Map comment shortcuts
+    { id: 'WMEPOI_mapcomment-area', description: 'Create Map Comment Area', settingsKey: 'MapCommentAreaShortcut', callback: _buildMapCommentCallback('polygon') },
+    { id: 'WMEPOI_mapcomment-area-line', description: 'Create Map Comment Area using Drawline', settingsKey: 'MapCommentAreaLineShortcut', callback: _buildMapCommentCallback('line') },
     // Utility shortcuts
     { id: 'WMEPOI_convert-other-to-residential', description: 'Convert OTHER to Residential (Copy Name to House Number)', settingsKey: 'ConvertOtherShortcut', callback: function () { convertOtherToResidential(wmeSDK); } },
   ];
@@ -5422,6 +5713,42 @@ Text: "${text}"`;
               // Restore previous valid value if invalid input
               this.value = schoolZoneWidth;
               Logger.warn('Invalid school zone width. Must be between 1 and 200.');
+            }
+          });
+        }
+
+        // Add event listener for Map Comment Width input
+        const inputMapCommentWidth = document.getElementById('_inputMapCommentWidth');
+        if (inputMapCommentWidth) {
+          // Restore value from localStorage
+          inputMapCommentWidth.value = mapCommentWidth;
+          inputMapCommentWidth.addEventListener('change', function () {
+            const newWidth = parseInt(this.value, 10);
+            if (!isNaN(newWidth) && newWidth > 0 && newWidth <= 200) {
+              mapCommentWidth = newWidth;
+              localStorage.setItem('wme-poi-shortcuts-map-comment-width', newWidth.toString());
+              Logger.info(`Map comment line width set to ${newWidth}`);
+            } else {
+              // Restore previous valid value if invalid input
+              this.value = mapCommentWidth;
+              Logger.warn('Invalid map comment width. Must be between 1 and 200.');
+            }
+          });
+        }
+
+        // Add event listener for Map Comment Lock dropdown
+        const selMapCommentLock = document.getElementById('_selMapCommentLock');
+        if (selMapCommentLock) {
+          selMapCommentLock.value = String(Math.min(Math.max(mapCommentLock, 0), _getMaxAllowedLockRank()));
+          selMapCommentLock.addEventListener('change', function () {
+            const newLock = parseInt(this.value, 10);
+            if (!isNaN(newLock) && newLock >= 0 && newLock <= _getMaxAllowedLockRank()) {
+              mapCommentLock = newLock;
+              localStorage.setItem('wme-poi-shortcuts-map-comment-lock', newLock.toString());
+              Logger.info(`Map comment lock level set to ${newLock + 1}`);
+            } else {
+              this.value = String(Math.min(Math.max(mapCommentLock, 0), _getMaxAllowedLockRank()));
+              Logger.warn('Invalid map comment lock level.');
             }
           });
         }
