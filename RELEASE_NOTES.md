@@ -1,4 +1,29 @@
-# Release Notes - v2025.12.07.01
+# Release Notes - v2026.10.29.001
+
+## 🗺️ Map Comment Area Shortcuts
+
+Two new keyboard shortcuts create area map comments straight from the map.
+
+### ✨ New Features
+
+**Create Map Comment Area**
+- Bind it in WME Settings → Keyboard Shortcuts, then draw a polygon.
+- The drawn area becomes a map comment with the subject "Area comment".
+- The comment is selected automatically so its editor opens for your text.
+
+**Create Map Comment Area using Drawline**
+- Draw a line instead of an area; the script buffers it into a corridor polygon.
+- Corridor width is configurable: POI Shortcuts sidebar → Map Comment → Line width (default 10 m).
+- Lock level is selectable in the same box (Map Comment → Lock); it is applied to the new comment and limited to your own rank.
+
+### 📝 Notes
+- The map change is **not** auto-saved — review the comment, edit the text, then press WME's Save.
+- Drawing can be cancelled normally (Esc); nothing is created in that case.
+- Existing School Zone and POI shortcuts are unchanged.
+
+---
+
+# Previous Release Notes - v2025.12.07.01
 
 ## 🔧 Maintenance Release
 

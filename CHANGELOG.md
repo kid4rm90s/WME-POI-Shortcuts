@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2026.10.29.001] - 2026-10-29
+
+### ✨ Map Comment Area Shortcuts
+
+#### Added
+- **Create Map Comment Area** keyboard shortcut — draws a polygon on the map and creates an area map comment from it (`DataModel.MapComments.addComment`).
+- **Create Map Comment Area using Drawline** keyboard shortcut — draws a line and creates a corridor-shaped map comment area by buffering the line.
+- **Map Comment → Line width** setting in the POI Shortcuts sidebar tab (1–200 m, default 10 m), persisted in localStorage.
+- **Map Comment → Lock** dropdown, mirroring the POI slot lock list; the chosen lock level is passed to `addComment({ lockRank })` and options stop at the editor's own rank.
+- Newly created comments are selected automatically so WME opens the comment editor; the change is left unsaved for review.
+
+---
+
 ## [2026.09.10.001] - 2026-09-10
 
 ### ✨ Gemini Translation (Beta)

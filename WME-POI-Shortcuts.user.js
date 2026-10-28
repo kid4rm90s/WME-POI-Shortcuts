@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            WME POI Shortcuts
 // @namespace       https://greasyfork.org/users/1087400
-// @version         2026.09.12.001
+// @version         2026.10.29.001
 // @description     Various UI changes to make editing faster and easier.
 // @author          kid4rm90s & copilot
 // @include         /^https:\/\/(www|beta)\.waze\.com\/(?!user\/)(.{2,6}\/)?editor\/?.*$/
@@ -32,12 +32,17 @@
 
   const updateMessage = `
       <strong>WHAT'S NEW :-</strong><br><br>
-      + Added Gemini translation as an alternative engine for POI names (choose Google or Gemini, with automatic fallback)<br>
-      + Translation now waits until you stop typing before sending the request<br>
-      + POI Translate success toast now shows which engine translated the name (Google or Gemini)<br>
-      + Added a "Get API" link next to the Gemini API Key input (opens Google AI Studio in a new tab)<br>
-      + Gemini now renders school names ("Basic School", "Lower Secondary School", "Primary School") as "आधारभूत विद्यालय" in Nepali<br>
-      + Minor UI alignment fixes for the POI item rows<br>+ and other minor bug fixes and improvements.<br><br>
+      + New shortcut: <b>Create Map Comment Area</b> — draw an area and get a map comment<br>
+      + New shortcut: <b>Create Map Comment Area using Drawline</b> — draw a line, a corridor area is built from it<br>
+      + Set the corridor width in the POI Shortcuts sidebar tab (Map Comment → Line width)<br>
+      + Pick the lock level applied to new comments (Map Comment → Lock)<br>
+      + The new comment is selected automatically and left as an unsaved change for review<br>
+      + School zones can now be given a recurring schedule automatically (set the schedule name in the POI Shortcuts sidebar tab)<br>
+      + "Find Schedule ID" lists the schedules WME returns for your country — no need to know a GUID<br>
+      + The schedule is verified against the map data model, so success means it actually stuck<br>
+      + Skips zones that already have a schedule instead of replacing it<br>
+      + Less UI churn: no deselect/reselect when the schedule panel is already open<br>
+      + and other minor bug fixes and improvements.<br><br>
   `;
   const scriptName = GM_info.script.name;
   const scriptVersion = GM_info.script.version;
@@ -493,6 +498,14 @@
   let openEditAddressOnRPP = false;
   let schoolZoneSpeedLimit = 20; // Default speed limit for school zones, can be customized in settings
   let schoolZoneWidth = 10; // Default width (meters) of the drawn line when creating school zones via draw line
+  let mapCommentWidth = 10; // Default corridor width (meters) when creating a map comment area via draw line
+  let mapCommentLock = 0; // Lock rank (0-based) applied to new map comments; 0 = no lock
+  let schoolZoneScheduleItemId = ''; // schedule NAME used to search WME's dropdown
+  let schoolZoneScheduleResolvedId = ''; // the id picked from WME's schedule list
+  // Which country the stored choice belongs to. A schedule is country-scoped, so a
+  // saved id is meaningless after crossing a border — we re-ask instead of applying
+  // another country's schedule. Persisted alongside the id.
+  let schoolZoneScheduleCountryId = '';
   try {
     gleEnabled = JSON.parse(localStorage.getItem('wme-poi-shortcuts-gle-enabled'));
   } catch (e) {
@@ -524,6 +537,40 @@
   } catch (e) {
     schoolZoneWidth = 10; // Default school zone line width if parsing fails
   }
+  try {
+    const storedMapCommentWidth = parseInt(localStorage.getItem('wme-poi-shortcuts-map-comment-width'), 10);
+    if (!isNaN(storedMapCommentWidth) && storedMapCommentWidth > 0) {
+      mapCommentWidth = storedMapCommentWidth;
+    }
+  } catch (e) {
+    mapCommentWidth = 10; // Default map comment corridor width if parsing fails
+  }
+  try {
+    const storedMapCommentLock = parseInt(localStorage.getItem('wme-poi-shortcuts-map-comment-lock'), 10);
+    if (!isNaN(storedMapCommentLock) && storedMapCommentLock >= 0) {
+      mapCommentLock = storedMapCommentLock;
+    }
+  } catch (e) {
+    mapCommentLock = 0;
+  }
+  try {
+    schoolZoneScheduleItemId = localStorage.getItem('wme-poi-shortcuts-school-zone-schedule-item-id') || '';
+  } catch (e) {
+    schoolZoneScheduleItemId = '';
+  }
+  try {
+    schoolZoneScheduleResolvedId = localStorage.getItem('wme-poi-shortcuts-school-zone-schedule-resolved-id') || '';
+  } catch (e) {
+    schoolZoneScheduleResolvedId = '';
+  }
+  try {
+    schoolZoneScheduleCountryId = localStorage.getItem('wme-poi-shortcuts-school-zone-schedule-country-id') || '';
+  } catch (e) {
+    schoolZoneScheduleCountryId = '';
+  }
+  // Waiting for the schedule panel to mount. Disconnected as soon as it injects, so there
+  // is at most one live observer, and none outside the school-zone editor.
+  let sczInjectObserver = null;
 
   // --- POI Translation settings ---
   //const POI_TRANSLATION_SPREADSHEET_ID = '1v5oktSBohAGIc_yAs2XBT2xK8oZ9FFR9tT5rT_hL_C8'; // Same sheet as Road Name Helper for GoogleTranslate sheet
@@ -736,12 +783,34 @@
       },
     });
     wmeSDK.Events.on({
+      eventName: 'wme-feature-editor-opened',
+      eventHandler: (payload) => {
+        // Fires for EVERY hazard type (toll booth, camera, curve...), so filter to
+        // permanent hazards first and let the injector confirm it is a school zone.
+        if (!payload || payload.featureType !== 'permanentHazard') return;
+        // No fixed delay: the injector watches for the panel to mount and injects the
+        // moment it does, so a timeout here only added latency to the common case.
+        injectSchoolZoneSchedulePanel(wmeSDK);
+      },
+    });
+
+    wmeSDK.Events.on({
       eventName: 'wme-selection-changed',
       eventHandler: () => {
+        const currentSelection = wmeSDK.Editing.getSelection();
+
+        // School zones are permanent hazards, not venues — handle them before the
+        // venue-only guard below, which returns early for everything else.
+        // The editor-opened event may fire before the panel mounts, so also retry here.
+        if (currentSelection && currentSelection.objectType === 'permanentHazard') {
+          injectSchoolZoneSchedulePanel(wmeSDK);
+          return;
+        }
+
         // Only process venue selections — skip segments, junctions, etc.
         // This prevents interference with other scripts like WME Segment City Tool.
-        const currentSelection = wmeSDK.Editing.getSelection();
         if (!currentSelection || currentSelection.objectType !== 'venue') {
+          $('#poi-scz-panel').remove();
           return;
         }
 
@@ -906,7 +975,9 @@
     const getLocalizedCategoryName = (categoryId) => mainCategoryMap.get(categoryId) || categoryId;
     const getLocalizedSubCategoryName = (subCategoryId) => subCategoryMap.get(subCategoryId) || subCategoryId;
 
-    let html = `<select id="poiItem${itemNumber}" style="font-size:10px;height:20px;width:100%;max-width:200px;margin:2px 0 2px 4px;">`;
+    // Sizing comes from the injected stylesheet; only the width is worth keeping inline,
+    // because the slot/field widths differ per row and are the one thing CSS cannot infer.
+    let html = `<select id="poiItem${itemNumber}">`;
     VENUE_CATEGORIES.forEach((cat) => {
       const categoryName = getLocalizedCategoryName(cat.key);
       html += `<option value="${cat.key}" data-icon="${cat.icon}" style="font-weight:bold;">${categoryName}</option>`;
@@ -920,80 +991,292 @@
   }
   function buildLockLevelDropdown(itemNumber) {
     // Show lock dropdown for all 10 items
-    let html = `<select id="poiLock${itemNumber}" style="margin-left:4px;font-size:10px;height:20px;width:35px;">`;
+    let html = `<select id="poiLock${itemNumber}" title="Lock level">`;
     for (let i = 0; i <= 4; i++) {
       html += `<option value="${i}">${i + 1}</option>`;
     }
     html += '</select>';
     return html;
   }
+
+  /**
+   * Highest lock rank (0-based) the logged-in editor may assign.
+   * Falls back to 4 (L5) when user info is not available yet.
+   * @returns {number}
+   */
+  function _getMaxAllowedLockRank() {
+    try {
+      const userInfo = wmeSDK && wmeSDK.State && wmeSDK.State.getUserInfo();
+      if (userInfo && typeof userInfo.rank === 'number' && !isNaN(userInfo.rank)) {
+        return Math.max(0, Math.min(userInfo.rank, 5));
+      }
+    } catch (e) { /* user info not ready — use fallback */ }
+    return 4;
+  }
+
+  /**
+   * Lock dropdown for new map comments. Values are 0-based lock ranks, matching
+   * the POI slot dropdown; options stop at the editor's own rank because
+   * MapComments.addComment validates lockRank against the user's rank.
+   * @returns {string} HTML for the select element.
+   */
+  function buildMapCommentLockDropdown() {
+    const maxRank = _getMaxAllowedLockRank();
+    const selectedRank = Math.min(Math.max(mapCommentLock, 0), maxRank);
+    let html = `<select id="_selMapCommentLock" title="Lock level">`;
+    for (let i = 0; i <= maxRank; i++) {
+      html += `<option value="${i}"${i === selectedRank ? ' selected' : ''}>${i + 1}</option>`;
+    }
+    html += '</select>';
+    return html;
+  }
   function buildGeometryTypeDropdown(itemNumber) {
     // Dropdown for geometry type: Point or Area
-    return `<select id="poiGeom${itemNumber}" style="margin-left:4px;font-size:10px;height:20px;width:55px;">
+    return `<select id="poiGeom${itemNumber}" title="Geometry type">
         <option value="area">Area</option>
         <option value="point">Point</option>
     </select>`;
   }
+  /**
+   * One shortcut slot as a collapsible card.
+   *
+   * The category dropdown is moved into the header on init, so a folded card still shows
+   * what the slot is bound to — folding hides the Lock/Geometry rows, not the slot's
+   * identity. It is MOVED rather than cloned, so the `poiItem<i>` id and the listeners
+   * bound to it in initializeItemOptions() are untouched.
+   */
   function buildItemOption(itemNumber) {
-    var $section = $('<div>', { style: 'padding:4px 8px;font-size:10px;', id: 'poiPlaceCat' + itemNumber });
-    $section.html(
-      [
-        `<span style="font-size:10px;font-weight:bold;padding-left:4px;">Item ${itemNumber}</span>`,
-        buildItemList(itemNumber),
-        `<div style="display:flex;align-items:center;gap:6px;margin:3px 0 0 0;padding-left:4px;">
-            <label style="font-size:10px;min-width:28px;">Lock</label> ${buildLockLevelDropdown(itemNumber)}
-            <label style="font-size:10px;min-width:40px;">Geometry</label> ${buildGeometryTypeDropdown(itemNumber)}
-        </div>`,
-      ].join(' ')
-    );
-    return $section.html();
+    const collapsed = loadSlotCollapsed(itemNumber);
+    return `
+      <div class="wme-poi-card${collapsed ? ' wme-poi-collapsed' : ''}" id="poiPlaceCat${itemNumber}">
+        <div class="wme-poi-card-header" role="button" tabindex="0"
+             aria-expanded="${collapsed ? 'false' : 'true'}" data-slot="${itemNumber}"
+             title="Click to collapse / expand this shortcut">
+          <span class="wme-poi-caret">${collapsed ? '\u25B8' : '\u25BE'}</span>
+          <span class="wme-poi-card-title">${itemNumber}</span>
+          <span class="wme-poi-slot-select">${buildItemList(itemNumber)}</span>
+        </div>
+        <div class="wme-poi-card-body">
+          <div class="wme-poi-field-row">
+            <span class="wme-poi-field-label">Lock</span>
+            ${buildLockLevelDropdown(itemNumber)}
+            <span class="wme-poi-field-label wme-poi-field-label-wide">Geometry</span>
+            ${buildGeometryTypeDropdown(itemNumber)}
+          </div>
+        </div>
+      </div>`;
+  }
+
+  // Folded/expanded state of the shortcut cards. One object, keyed by slot number, so a
+  // corrupt or missing entry simply means "expanded" — the default, matching how the
+  // panel behaved before the cards were collapsible.
+  const POI_SLOT_COLLAPSED_KEY = 'wme-poi-shortcuts-slot-collapsed';
+
+  function loadSlotCollapsed(slotNumber) {
+    try {
+      const all = JSON.parse(localStorage.getItem(POI_SLOT_COLLAPSED_KEY)) || {};
+      return !!all[slotNumber];
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function saveSlotCollapsed(slotNumber, collapsed) {
+    try {
+      const all = JSON.parse(localStorage.getItem(POI_SLOT_COLLAPSED_KEY)) || {};
+      all[slotNumber] = collapsed;
+      localStorage.setItem(POI_SLOT_COLLAPSED_KEY, JSON.stringify(all));
+    } catch (e) {
+      // Storage blocked or full — folding is purely cosmetic, never block the UI on it.
+    }
+  }
+
+  /** Fold/unfold one card, keeping the caret and aria-expanded in step. */
+  function toggleSlotCollapsed(card, slotNumber) {
+    const collapsed = !card.classList.contains('wme-poi-collapsed');
+    card.classList.toggle('wme-poi-collapsed', collapsed);
+    const caret = card.querySelector('.wme-poi-caret');
+    if (caret) caret.textContent = collapsed ? '\u25B8' : '\u25BE';
+    const header = card.querySelector('.wme-poi-card-header');
+    if (header) header.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    saveSlotCollapsed(slotNumber, collapsed);
+  }
+
+  /**
+   * Styles for the POI Shortcuts sidebar tab and the school zone schedule panel.
+   * Injected once, keyed by id.
+   *
+   * Every colour is a WME CSS token with a light fallback, so the panel tracks the editor
+   * theme instead of hard-coding greys — which is what made the previous version show a
+   * light-grey header block on WME's dark column. Literal hex is used only for the status
+   * colours (the green "active" dot) per the theming contract.
+   */
+  function injectPOISidebarStyles() {
+    var css = [
+      // Root: resets what WME's global styles leak in. No font-family beyond inherit, so
+      // the panel reads as part of WME rather than pasted on top of it.
+      '#wme-poi-shortcuts-content { box-sizing: border-box; padding: 4px; font-family: inherit; font-size: 11px; line-height: 1.45; color: var(--content_default, #333); }',
+      '#wme-poi-shortcuts-content *, #wme-poi-shortcuts-content *::before, #wme-poi-shortcuts-content *::after { box-sizing: border-box; }',
+
+      // Header: crimson gradient, matching the Nepali GIS Layers panel so the two scripts
+      // read as one family. A fixed brand gradient is the one place a literal colour is
+      // intentional — it must not flip with the theme.
+      '.wme-poi-header { display: flex; align-items: center; gap: 6px; padding: 7px 9px; margin-bottom: 8px; border-radius: 6px; background: linear-gradient(135deg, #DC143C 0%, #7d0b22 100%); color: #fff; }',
+      '.wme-poi-header-title { flex: 1 1 auto; min-width: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.3px; color: #fff; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }',
+      '.wme-poi-header-version { flex: none; font-size: 9px; font-weight: 500; color: rgba(255, 255, 255, 0.9); }',
+
+      // Card. The header is a distinct bordered band, so it reads as the clickable row and
+      // the body below it as the content — that separation is what makes the category field
+      // obviously an editable control rather than part of the chrome.
+      '.wme-poi-card { margin-bottom: 6px; border: 1px solid var(--hairline, #dadce0); border-radius: 6px; background: var(--background_default, #fff); overflow: hidden; }',
+      '.wme-poi-card-header { display: flex; align-items: center; gap: 6px; padding: 5px 7px; border-left: 3px solid #29B6F6; background: var(--surface_default, #f8f9fa); cursor: pointer; user-select: none; }',
+      '.wme-poi-card-header:hover .wme-poi-card-title { text-decoration: underline; }',
+      // Inset the ring so it draws inside the band instead of around the whole card.
+      '.wme-poi-card-header:focus-visible { outline: 2px solid #29B6F6; outline-offset: -2px; }',
+      // The number is the slot's identity, so it is the brightest thing in the band and
+      // gets a fixed width to stop the dropdowns drifting between rows.
+      '.wme-poi-caret { flex: none; width: 8px; text-align: center; font-size: 9px; line-height: 1; color: #29B6F6; }',
+      '.wme-poi-card-title { flex: none; min-width: 14px; text-align: right; font-size: 11px; font-weight: 700; color: var(--content_p1, #202124); white-space: nowrap; }',
+      '.wme-poi-slot-select { flex: 1 1 auto; min-width: 0; }',
+      '.wme-poi-card-body { padding: 7px; border-top: 1px solid var(--hairline, #dadce0); }',
+      '.wme-poi-collapsed > .wme-poi-card-body { display: none; }',
+
+      // Field row: both labels share a width so the controls line up across cards.
+      '.wme-poi-field-row { display: flex; align-items: center; gap: 6px; }',
+      '.wme-poi-field-label { flex: none; min-width: 34px; font-size: 10px; color: var(--content_p2, #5f6368); }',
+      '.wme-poi-field-label-wide { min-width: 58px; }',
+      // The Lock/Geometry selects sit in a flex row; without this they stretch to the row
+      // height and the dropdown arrow drifts off-centre.
+      '.wme-poi-field-row > select { align-self: center; }',
+
+      // Native controls. Compound selectors + !important on the box properties are what
+      // beat WME's bare input/select element rules; accent-color is what themes a native
+      // checkbox instead of hand-drawing one.
+      '#wme-poi-shortcuts-content select { box-sizing: border-box; height: 22px; min-width: 0; padding: 0 4px; border: 1px solid var(--hairline, #dadce0); border-radius: 4px; background: var(--background_default, #fff); color: var(--content_default, #333); font-family: inherit; font-size: 10px; }',
+      '.wme-poi-slot-select > select { width: 100%; }',
+      // Lock / Geometry keep the compact widths they had inline before.
+      '.wme-poi-field-row > select[id^="poiLock"] { flex: none; width: 38px; }',
+      '.wme-poi-field-row > select[id^="poiGeom"] { flex: none; width: 62px; }',
+      '#wme-poi-shortcuts-content input[type="checkbox"] { width: 14px !important; height: 14px !important; min-width: 14px; margin: 0 !important; padding: 0 !important; accent-color: var(--primary, #0073e6); cursor: pointer; }',
+      '#wme-poi-shortcuts-content input[type="number"], #wme-poi-shortcuts-content input[type="text"] { box-sizing: border-box; padding: 3px 4px; border: 1px solid var(--hairline, #dadce0); border-radius: 4px; background: var(--background_default, #fff); color: var(--content_default, #333); font-family: inherit; font-size: 10px; }',
+
+      // Settings rows: label wraps its own control (no `for`), so there is never a
+      // double-toggle from a for-attribute plus a click handler.
+      '.wme-poi-setting { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; min-height: 18px; }',
+      '.wme-poi-setting > label { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 10px; color: var(--content_p1, #202124); cursor: pointer; user-select: none; }',
+      // Sub rows sit under their parent setting. The indent is the checkbox width + gap, so
+      // a sub row's first control lines up with the parent's label text.
+      '.wme-poi-sub { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0 0 6px 20px; }',
+      '.wme-poi-sub-label { flex: none; font-size: 10px; color: var(--content_p2, #5f6368); }',
+      // Bordered group for settings that belong together (the school zone numbers).
+      // Same vocabulary as the shortcut cards, one level down — including the cyan accent
+      // bar, so the accent reads as one system rather than two unrelated highlights.
+      '.wme-poi-box { padding: 6px 8px; margin: 0 0 6px; border: 1px solid var(--hairline, #dadce0); border-left: 3px solid #29B6F6; border-radius: 6px; background: var(--surface_default, #f8f9fa); }',
+      '.wme-poi-box-title { margin-bottom: 5px; font-size: 10px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; color: var(--content_p2, #5f6368); }',
+      '.wme-poi-box-row { display: flex; align-items: center; gap: 6px; }',
+      '.wme-poi-box-row + .wme-poi-box-row { margin-top: 5px; }',
+      '.wme-poi-box-row > .wme-poi-sub-label:first-child { min-width: 74px; }',
+      '.wme-poi-link { font-size: 10px; color: var(--primary, #0073e6); text-decoration: underline; }',
+      '.wme-poi-help { margin-top: 8px; font-size: 10px; font-style: italic; color: var(--content_p2, #5f6368); }',
+    ].join('\n');
+    injectCSSWithID('poi-sidebar-styles', css);
   }
   function buildAllItemOptions() {
     let html = '';
     for (let i = 1; i <= 10; i++) {
       html += buildItemOption(i);
     }
-    // Add checkboxes before the keyboard shortcuts message
+    // Settings, one control group per row. Every id is preserved, so the listeners in
+    // registerSidebarScriptTab() are untouched by this markup change.
     html += `
-    <div style="margin:12px 0 8px 0; padding:4px 8px; background:transparent; border-radius:4px;">
-      <label style="font-size:10px; font-weight:bold;">
+    <div class="wme-poi-setting">
+      <label>
         <input type="checkbox" id="_cbEnableGLE" ${GLE && GLE.enabled ? 'checked' : ''} /> Enable Google Link Enhancer
       </label>
-      <br>
-      <label style="font-size:10px; font-weight:bold; margin-top:4px; display:inline-block;">
+    </div>
+    <div class="wme-poi-setting">
+      <label>
         <input type="checkbox" id="_cbOpenEditAddressRPP" ${openEditAddressOnRPP ? 'checked' : ''} /> Open edit address when RPP selected
       </label>
-      <br>
-      <label style="font-size:10px; font-weight:bold; margin-top:4px; display:inline-block;">
+    </div>
+    <div class="wme-poi-setting">
+      <label>
         <input type="checkbox" id="_cbEnablePOITranslate" ${poiTranslationActive ? 'checked' : ''} /> Show Translate button for POI names
       </label>
-      <select id="_selPOITranslateLocale" style="margin-left:4px;font-size:10px;height:20px;width:100px;">
+    </div>
+    <div class="wme-poi-sub">
+      <select id="_selPOITranslateLocale">
         ${UNIQUE_TRANSLATION_LOCALES.map(l => `<option value="${l.code}" ${l.code === poiTranslationTargetLanguage ? 'selected' : ''}>${l.label}</option>`).join('')}
       </select>
-      <select id="_selPOITranslateProvider" style="margin-left:4px;font-size:10px;height:20px;width:110px;" title="Translation engine">
+      <select id="_selPOITranslateProvider" title="Translation engine">
         <option value="google" ${poiTranslationProvider === 'google' ? 'selected' : ''}>Google</option>
         <option value="gemini" ${poiTranslationProvider === 'gemini' ? 'selected' : ''}>Gemini</option>
       </select>
-      <label style="font-size:10px; font-weight:bold; margin-top:4px; display:inline-block;">
+    </div>
+    <div class="wme-poi-setting">
+      <label>
         <input type="checkbox" id="_cbPOITranslateFallback" ${poiTranslationFallback ? 'checked' : ''} /> Fallback to other engine
       </label>
-      <br>
-      <label style="font-size:10px; font-weight:bold; margin-top:4px; display:inline-block;">
-        Gemini API Key:
-        <input type="text" id="_inputGeminiApiKey" placeholder="paste key" style="width:150px; margin-left:4px; -webkit-text-security: disc;" />
-      </label>
-      <a href="https://aistudio.google.com/api-keys" target="_blank" rel="noopener noreferrer" title="Get a free Gemini API key from Google AI Studio (opens in a new tab)" style="font-size:10px; margin-left:6px; color:#4a90d9; text-decoration:underline;">Get API</a>
-      <br>
-      <label style="font-size:10px; font-weight:bold; margin-top:4px; display:inline-block;">
-        School Zone SL: <input type="number" id="_inputSchoolZoneSpeedLimit" value="${schoolZoneSpeedLimit}" min="1" max="100" style="width:50px; margin-left:4px;" />
-        <div style="margin-top:6px;">
-          School Zone Width (m): <input type="number" id="_inputSchoolZoneWidth" value="${schoolZoneWidth}" min="1" max="200" style="width:50px; margin-left:4px;" />
         </div>
-      </label>
+    <div class="wme-poi-sub">
+      <span class="wme-poi-sub-label">Gemini API Key:</span>
+      <input type="text" id="_inputGeminiApiKey" placeholder="paste key" style="-webkit-text-security: disc;" />
+      <a class="wme-poi-link" href="https://aistudio.google.com/api-keys" target="_blank" rel="noopener noreferrer" title="Get a free Gemini API key from Google AI Studio (opens in a new tab)">Get API</a>
+    </div>
+    <div class="wme-poi-box">
+      <div class="wme-poi-box-title">School Zone</div>
+      <div class="wme-poi-box-row">
+        <span class="wme-poi-sub-label">Speed limit:</span>
+        <input type="number" id="_inputSchoolZoneSpeedLimit" value="${schoolZoneSpeedLimit}" min="1" max="100" style="width:50px;" />
+        <span class="wme-poi-sub-label">km/h</span>
+      </div>
+      <div class="wme-poi-box-row">
+        <span class="wme-poi-sub-label">Line width:</span>
+        <input type="number" id="_inputSchoolZoneWidth" value="${schoolZoneWidth}" min="1" max="200" style="width:50px;" />
+        <span class="wme-poi-sub-label">m</span>
+      </div>
+    </div>
+    <div class="wme-poi-box">
+      <div class="wme-poi-box-title">Map Comment</div>
+      <div class="wme-poi-box-row">
+        <span class="wme-poi-sub-label">Line width:</span>
+        <input type="number" id="_inputMapCommentWidth" value="${mapCommentWidth}" min="1" max="200" style="width:50px;" />
+        <span class="wme-poi-sub-label">m</span>
+      </div>
+      <div class="wme-poi-box-row">
+        <span class="wme-poi-sub-label">Lock:</span>
+        ${buildMapCommentLockDropdown()}
+      </div>
     </div>`;
-    html += `<div style='font-size:10px;color:#888;margin-top:8px;'>You can bind keyboard shortcuts using WME's native shortcuts section.</div>`;
+    html += `<div class="wme-poi-help">You can bind keyboard shortcuts using WME's native shortcuts section.</div>`;
     setTimeout(() => {
       for (let i = 1; i <= 10; i++) {
+        // Move the category dropdown into the card header FIRST. It must happen before
+        // loadPOIShortcutItem() / _refreshPOIShortcut(), which read the control's value —
+        // re-parenting afterwards would have them touch a node mid-move. Moving is safe:
+        // the element keeps its id, value and any listeners.
+        const card = document.getElementById('poiPlaceCat' + i);
+        if (card) {
+          const slotHost = card.querySelector('.wme-poi-slot-select');
+          const itemSelect = document.getElementById('poiItem' + i);
+          if (slotHost && itemSelect) slotHost.appendChild(itemSelect);
+
+          const header = card.querySelector('.wme-poi-card-header');
+          if (header) {
+            header.addEventListener('click', function (ev) {
+              // Clicking the dropdown is a category change, not a fold request.
+              if (ev.target.closest('select')) return;
+              toggleSlotCollapsed(card, i);
+            });
+            header.addEventListener('keydown', function (ev) {
+              if (ev.key === 'Enter' || ev.key === ' ') {
+                ev.preventDefault();
+                toggleSlotCollapsed(card, i);
+              }
+            });
+          }
+        }
+
         loadPOIShortcutItem(i);
         // Sync the shortcut description with the currently-selected category in the dropdown
         _refreshPOIShortcut(i, wmeSDK);
@@ -1146,7 +1429,818 @@
                   ? '<b>School Zone</b> created: ' + schoolName + ' with speed limit ' + schoolZoneSpeedLimit + ' km/h'
                   : '<b>School Zone</b> created successfully', false, false, 2500);
               } catch (e) { Logger.warn('WazeToastr.Alerts.success failed:', e); }
+    // Apply the saved schedule shortly after creation so WME finishes adding the hazard
+    setTimeout(function () { applySchoolZoneSchedule(schoolZoneId); }, 600);
     return schoolZoneId;
+  }
+
+  // ===================================================================
+  // SCHOOL ZONE SCHEDULE AUTOMATION
+  // Drives WME's native schedule dialog (create → search → 3 steps → publish)
+  // entirely through open shadow roots. All selectors live in _SCZ so a WME
+  // beta rename is a one-line fix.
+  // ===================================================================
+
+  const _SCZ = {
+    ADD_SCHEDULE: '[data-testid="school-zone-add-schedule"]',
+    // Present INSTEAD of ADD_SCHEDULE once the zone already carries a schedule, so the
+    // panel must accept either anchor or it silently disappears on scheduled zones.
+    SCHEDULE_CARD: '[data-testid="list-item-card-revamp"]',
+    // Anchor for the injected panel: sits above the tab bar and exists in both states.
+    BANNER: '[data-testid="school-zone-banner"]',
+    // One form per step — confirmed from a live DOM dump. These are the reliable
+    // "which step am I on" signal; the Next button alone cannot tell us that.
+    INCLUDE_FORM: '[data-testid="schedule-include-form"]',
+    EXCLUDE_FORM: '[data-testid="schedule-exclude-form"]',
+    SEARCH_INPUT: 'input[type="text"]',
+    NEXT: '[data-testid="schedule-next-btn"]',
+    PUBLISH: '[data-testid="schedule-dialog-close-button"]',
+  };
+
+  /**
+   * Recursively query inside an element, descending through every open shadowRoot.
+   * WME renders its panels as nested web components, so a plain querySelector
+   * cannot reach the schedule controls.
+   * @param {string} selector - CSS selector to find.
+   * @param {Node} root - Node to search from (defaults to document).
+   * @returns {Element|null} First match, or null.
+   */
+  function _sczDeepQuery(selector, root) {
+    root = root || document;
+    const found = root.querySelector ? root.querySelector(selector) : null;
+    if (found) return found;
+    const hosts = root.querySelectorAll ? root.querySelectorAll('*') : [];
+    for (let i = 0; i < hosts.length; i++) {
+      const sr = hosts[i].shadowRoot;
+      if (sr) {
+        const hit = _sczDeepQuery(selector, sr);
+        if (hit) return hit;
+      }
+    }
+    return null;
+  }
+
+  /** Deep query returning every match across shadow roots. */
+  function _sczDeepQueryAll(selector, root, out) {
+    root = root || document;
+    out = out || [];
+    if (root.querySelectorAll) out.push.apply(out, root.querySelectorAll(selector));
+    const hosts = root.querySelectorAll ? root.querySelectorAll('*') : [];
+    for (let i = 0; i < hosts.length; i++) {
+      const sr = hosts[i].shadowRoot;
+      if (sr) _sczDeepQueryAll(selector, sr, out);
+    }
+    return out;
+  }
+
+  /**
+   * Poll for a deep element until it appears or the timeout elapses.
+   * @returns {Promise<Element|null>} The element, or null on timeout.
+   */
+  function _sczWaitFor(selector, timeout) {
+    const deadline = Date.now() + (timeout || 6000);
+    return new Promise(function (resolve) {
+      (function poll() {
+        const el = _sczDeepQuery(selector);
+        if (el) return resolve(el);
+        if (Date.now() > deadline) return resolve(null);
+        setTimeout(poll, 200);
+      })();
+    });
+  }
+
+  /**
+   * Click a WME web component. wz-button hosts expose their own click but the
+   * real handler sits on the inner native <button>, so click both.
+   */
+  function _sczClick(el) {
+    if (!el) return false;
+    try { el.click(); } catch (e) { /* host not clickable */ }
+    let inner = el.shadowRoot ? el.shadowRoot.querySelector('button') : null;
+    if (!inner) { try { inner = el.querySelector('button'); } catch (e) { /* ignore */ } }
+    if (inner && inner !== el) { try { inner.click(); } catch (e) { /* ignore */ } }
+    return true;
+  }
+
+  /** Small helper for step logging + user-visible progress toasts. */
+  function _sczLog(step, message, ok) {
+    const line = '[SchoolZone Schedule] ' + step + ': ' + message;
+    if (ok === false) Logger.warn(line); else Logger.info(line);
+  }
+  function _sczToast(message, isError) {
+    try {
+      if (isError) WazeToastr.Alerts.error('School Zone Schedule', message, false, false, 4000);
+      else WazeToastr.Alerts.info('School Zone Schedule', message, false, false, 2500);
+    } catch (e) { Logger.warn('WazeToastr call failed:', e); }
+  }
+
+  /**
+   * Fill the schedule search box and pick the stored schedule from the dropdown.
+   * Setting .value alone does not open wz-autocomplete's menu, so we also
+   * dispatch input/change/keyboard events (mirrors selectChargingStationNetwork).
+   */
+  /**
+   * Fill the schedule search box and pick the matching schedule from the dropdown.
+   * @param {string} searchTerm - Text to type into the search box.
+   */
+  async function _sczSelectScheduleFromDropdown(searchTerm) {
+    const form = await _sczWaitFor(_SCZ.INCLUDE_FORM, 6000);
+    if (!form) { _sczLog('search', 'schedule-include-form not found', false); return false; }
+    _sczLog('search', 'include form found');
+
+    const input = _sczDeepQuery(_SCZ.SEARCH_INPUT, form) || await _sczWaitFor(_SCZ.SEARCH_INPUT, 3000);
+    if (!input) { _sczLog('search', 'search input not found', false); return false; }
+
+    input.focus();
+    input.value = searchTerm;
+    input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+    input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, composed: true, key: 'a' }));
+    _sczLog('search', 'typed "' + searchTerm + '", waiting for dropdown');
+
+    // Match the dropdown entry. Confirmed against a live WME dropdown:
+    //   * real entries carry item-id = the schedule GUID (e.g. 6a598827-...)
+    //   * the title attribute holds the display text
+    //     ("Nepal ・ Nepal School Schedule\nScheduled and excluded dates")
+    //   * ~60 other <wz-menu-item> elements exist with NO item-id and no title —
+    //     they are other components' internals and must be skipped entirely.
+    //
+    // The search box itself filters the list, so the ranked match below is a
+    // preference, not the filter: name first (what the user typed), id second.
+    const expectedId = schoolZoneScheduleResolvedId;
+    const term = String(searchTerm || '').trim().toLowerCase();
+    let option = null;
+    const deadline = Date.now() + 6000;
+    while (Date.now() < deadline && !option) {
+      const items = _sczDeepQueryAll('wz-menu-item');
+      for (let i = 0; i < items.length; i++) {
+        const id = (items[i].getAttribute('item-id') || items[i].getAttribute('itemId') || '').trim();
+        // Skip the decoys: no id AND no title means it is not a real dropdown entry.
+        const title = (items[i].getAttribute('title') || '').trim();
+        if (!id && !title) continue;
+        const titleLower = title.toLowerCase();
+
+        const idMatch = expectedId && id === expectedId;
+        // Title carries a trailing description line; match on the name line only.
+        const nameLine = titleLower.split('\n')[0].trim();
+        const nameMatch = term && (nameLine === term || titleLower.indexOf(term) !== -1);
+        // The typed text is also the schedule's name — accept the id that matches it.
+        if (idMatch || nameMatch) { option = items[i]; break; }
+      }
+      if (!option) await new Promise(function (r) { setTimeout(r, 200); });
+    }
+    if (!option) {
+      // No guessing: applying the wrong schedule to a zone is worse than failing.
+      _sczLog('select', 'no dropdown entry matched ' + (expectedId ? 'scheduleId "' + expectedId + '"' : '') +
+        (expectedId && term ? ' or ' : '') + (term ? 'name "' + searchTerm + '"' : ''), false);
+      const real = _sczDeepQueryAll('wz-menu-item').filter(function (el) {
+        return (el.getAttribute('item-id') || '').trim() || (el.getAttribute('title') || '').trim();
+      });
+      _sczLog('select', 'real dropdown entries (' + real.length + '): ' + real.slice(0, 15).map(function (el) {
+        const t = (el.getAttribute('title') || '').split('\n')[0].trim();
+        return (el.getAttribute('item-id') || '?') + ' / "' + t + '"';
+      }).join(' | '));
+      return false;
+    }
+
+    _sczClick(option);
+    _sczLog('select', 'clicked schedule entry "' +
+      ((option.getAttribute('title') || '').split('\n')[0].trim() || option.getAttribute('item-id')) + '"');
+    return await _sczWaitFor(_SCZ.NEXT, 6000) !== null;
+  }
+
+  /**
+   * Read a permanent hazard as a SchoolZone via the SDK.
+   * PermanentHazards exposes read-only methods (getAll/getById/getAllCameras) —
+   * there is no SDK setter for scheduleId, which is why the schedule itself is
+   * still written through the DOM dialog. This is used to verify the result.
+   * @returns {Object|null} The SchoolZone, or null if not a readable school zone.
+   */
+  function _sczGetSchoolZone(hazardId) {
+    try {
+      const hazard = wmeSDK.DataModel.PermanentHazards.getById({ hazardId: Number(hazardId) });
+      if (!hazard || hazard.type !== 'SCHOOL_ZONE') return null;
+      return hazard;
+    } catch (e) {
+      _sczLog('read', 'could not read hazard ' + hazardId + ': ' + e.message, false);
+      return null;
+    }
+  }
+
+  /**
+   * Poll until the SDK reports a schedule on the zone.
+   *
+   * WME COPIES the picked template into a NEW per-zone schedule — confirmed live:
+   * picking template 6a598827-... left the zone holding 6cb8982c-... with the card
+   * showing "(No name)". So a DIFFERENT id is the expected success case, and the
+   * only meaningful check is that *some* scheduleId appeared. Comparing against the
+   * template id would fail every single successful run.
+   *
+   * @returns {Promise<string|null>} The zone's scheduleId, or null if none appeared.
+   */
+  async function _sczConfirmScheduleApplied(hazardId) {
+    const deadline = Date.now() + 6000;
+    let lastSeen = '<unread>';
+    while (Date.now() < deadline) {
+      const zone = _sczGetSchoolZone(hazardId);
+      if (zone) {
+        lastSeen = zone.scheduleId === null ? 'null' : String(zone.scheduleId);
+        if (zone.scheduleId !== null && zone.scheduleId !== undefined && String(zone.scheduleId) !== '') {
+          return lastSeen;
+        }
+      }
+      await new Promise(function (r) { setTimeout(r, 300); });
+    }
+    _sczLog('verify', 'no scheduleId on the zone after publish (last saw: ' + lastSeen + ')', false);
+    return null;
+  }
+
+  /**
+   * Resolve when WME opens a permanent-hazard feature editor.
+   * The event only reports the feature type, not which hazard, so this is safe
+   * only inside applySchoolZoneSchedule where the selection was just set.
+   * If the panel is already rendered the event may never fire, so this races
+   * the event against a poll for the element we actually need.
+   *
+   * @param {string} selector - DOM element to resolve on.
+   * @param {number} timeout - Max ms to wait for the event.
+   * @returns {Promise<Element|null>} The element, or null on timeout.
+   */
+  function _sczWaitForEditor(selector, timeout) {
+    return new Promise(function (resolve) {
+      const existing = _sczDeepQuery(selector);
+      if (existing) return resolve(existing);
+
+      let settled = false;
+      let unsubscribe = null;
+      let pollTimer = null;
+
+      function finish(el, viaEvent) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        clearInterval(pollTimer);
+        if (unsubscribe) { try { unsubscribe(); } catch (e) { /* already gone */ } }
+        _sczLog('wait', el
+          ? 'editor ready (' + (viaEvent ? 'feature-editor-opened event' : 'poll fallback') + ')'
+          : 'timed out waiting for ' + selector, !!el);
+        resolve(el || null);
+      }
+
+      const timer = setTimeout(function () { finish(_sczDeepQuery(selector), false); }, timeout || 6000);
+
+      try {
+        unsubscribe = wmeSDK.Events.on({
+          eventName: 'wme-feature-editor-opened',
+          eventHandler: function (payload) {
+            if (!payload || payload.featureType !== 'permanentHazard') return;
+            // Event says a hazard panel opened — confirm the control we need exists.
+            const el = _sczDeepQuery(selector);
+            if (el) finish(el, true);
+          },
+        });
+      } catch (e) {
+        _sczLog('wait', 'could not subscribe to feature-editor-opened: ' + e.message, false);
+      }
+
+      // Coarse fallback: some paths re-render the panel without firing the event.
+      pollTimer = setInterval(function () {
+        const el = _sczDeepQuery(selector);
+        if (el) finish(el, false);
+      }, 300);
+    });
+  }
+
+  /**
+   * Fetch the list of school-zone schedules for the current country from WME's
+   * own API. This is the authoritative source: it returns every schedule with its
+   * real `id`, so the user never has to discover a GUID from a zone.
+   *
+   * Endpoint shape (ROW):
+   *   /row-Descartes/app/v1/Features/Schedules?countryId=&name=&pageToken=&pageSize=
+   * Response: { schedules: { nextPageToken, objects: [{ id, name, description,
+   *   type, countryId, usageCount, lockRank, timeframes: [...] }] } }
+   *
+   * @param {string} nameFilter - Optional name substring to search for.
+   * @returns {Promise<Array<{id: string, name: string, usageCount: number}>>}
+   */
+  function _sczFetchSchedules(nameFilter) {
+    return new Promise(function (resolve) {
+      let countryId = '';
+      try {
+        const top = wmeSDK.DataModel.Countries.getTopCountry();
+        if (top && top.id !== undefined) countryId = String(top.id);
+      } catch (e) {
+        _sczLog('api', 'could not read top country: ' + e.message, false);
+      }
+
+      // WME serves the same API on both hosts; mirror the current environment.
+      const host = /beta\.waze\.com/.test(location.hostname) ? 'beta.waze.com' : 'www.waze.com';
+      const url = 'https://' + host + '/row-Descartes/app/v1/Features/Schedules' +
+        '?countryId=' + encodeURIComponent(countryId) +
+        '&name=' + encodeURIComponent(nameFilter || '') +
+        '&pageToken=&stateIds=&pageSize=100&timeframeRelation=INCLUDE';
+
+      _sczLog('api', 'GET Schedules (countryId=' + (countryId || '?') + ')');
+      GM_xmlhttpRequest({
+        method: 'GET',
+        url: url,
+        responseType: 'json',
+        onload: function (resp) {
+          if (resp.status < 200 || resp.status >= 300) {
+            _sczLog('api', 'HTTP ' + resp.status + ' from Schedules endpoint', false);
+            return resolve(null);
+          }
+          try {
+            const body = typeof resp.response === 'object' && resp.response !== null
+              ? resp.response
+              : JSON.parse(resp.responseText);
+            const objects = (body && body.schedules && body.schedules.objects) || [];
+            const list = objects.filter(function (o) { return o && o.id; }).map(function (o) {
+              return { id: String(o.id), name: o.name || '(unnamed)', usageCount: o.usageCount || 0 };
+            });
+            _sczLog('api', 'received ' + list.length + ' schedule(s)');
+            resolve(list);
+          } catch (e) {
+            _sczLog('api', 'could not parse Schedules response: ' + e.message, false);
+            resolve(null);
+          }
+        },
+        onerror: function (err) {
+          _sczLog('api', 'network error: ' + JSON.stringify(err), false);
+          resolve(null);
+        },
+        ontimeout: function () {
+          _sczLog('api', 'request timed out', false);
+          resolve(null);
+        },
+      });
+    });
+  }
+
+  /**
+   * Wait for a specific step's form to appear, then click Next and wait for the
+   * NEXT step's form. Keyed on each step's own data-testid (not the Next button,
+   * which is reused across steps — waiting on it returns instantly on the old one).
+   *
+   * @param {string} fromForm - testid selector for the step we are on.
+   * @param {string} toForm - testid selector for the step we expect next.
+   * @param {string} label - Step label for logging.
+   * @returns {Promise<boolean>} True once the next step is on screen.
+   */
+  async function _sczAdvanceStep(fromForm, toForm, label) {
+    const at = await _sczWaitFor(fromForm, 6000);
+    if (!at) {
+      _sczLog(label, 'expected form ' + fromForm + ' not found', false);
+      return false;
+    }
+    // The Next button is shared across steps; snapshot it so we can detect that the
+    // dialog re-rendered rather than trusting the same node to mean "advanced".
+    const before = _sczDeepQuery(_SCZ.NEXT);
+    if (!before) {
+      _sczLog(label, 'Next button not found on ' + fromForm, false);
+      return false;
+    }
+    _sczClick(before);
+    const next = await _sczWaitFor(toForm, 6000);
+    if (!next) {
+      _sczLog(label, 'clicked Next but ' + toForm + ' never appeared', false);
+      return false;
+    }
+    _sczLog(label, 'advanced to ' + toForm);
+    return true;
+  }
+
+  /** Current country id, or '' when unavailable. Schedules are country-scoped. */
+  function _sczCountryId() {
+    try {
+      const top = wmeSDK.DataModel.Countries.getTopCountry();
+      return top && top.id !== undefined ? String(top.id) : '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  /** Persist the chosen schedule (id + name) against the country it belongs to. */
+  function _sczSaveChoice(id, name, countryId) {
+    schoolZoneScheduleResolvedId = id || '';
+    schoolZoneScheduleItemId = name || '';
+    schoolZoneScheduleCountryId = countryId || '';
+    try {
+      localStorage.setItem('wme-poi-shortcuts-school-zone-schedule-resolved-id', schoolZoneScheduleResolvedId);
+      localStorage.setItem('wme-poi-shortcuts-school-zone-schedule-item-id', schoolZoneScheduleItemId);
+      localStorage.setItem('wme-poi-shortcuts-school-zone-schedule-country-id', schoolZoneScheduleCountryId);
+    } catch (e) {
+      Logger.warn('[SchoolZone Schedule] could not save schedule choice:', e);
+    }
+    _sczLog('pick', 'saved "' + name + '" (' + id + ') for country ' + (countryId || '?'));
+  }
+
+  /**
+   * Ask WME for this country's schedules and let the user choose one.
+   * Called on first use and whenever the country changes, because a schedule id is
+   * only meaningful within its own country.
+   *
+   * @param {boolean} force - Ask even if a valid choice for this country exists.
+   * @returns {Promise<boolean>} True when a choice is stored and usable.
+   */
+  async function _sczChooseSchedule(force) {
+    const countryId = _sczCountryId();
+
+    // Reuse the saved choice only when it belongs to the country we are in now.
+    const haveValidChoice = schoolZoneScheduleResolvedId &&
+      (!countryId || !schoolZoneScheduleCountryId || schoolZoneScheduleCountryId === countryId);
+    if (haveValidChoice && !force) return true;
+
+    const list = await _sczFetchSchedules('');
+    if (!list || list.length === 0) {
+      _sczLog('pick', 'no schedules available for country ' + (countryId || '?'), false);
+      _sczToast('No school schedules found for this country.', true);
+      return false;
+    }
+
+    if (list.length === 1) {
+      _sczSaveChoice(list[0].id, list[0].name, countryId);
+      _sczToast('Using the only schedule available: <b>' + list[0].name + '</b>');
+      return true;
+    }
+
+    // Several schedules — ask which one. WazeToastr has prompt/confirm but no list or
+    // select dialog, so the list goes in the prompt body and the user answers with a
+    // number. The returned promise resolves with the chosen index, or -1 on cancel.
+    const shown = list.slice(0, 20);
+    const reason = schoolZoneScheduleResolvedId && schoolZoneScheduleCountryId !== countryId
+      ? 'Country changed — pick the schedule for this country:'
+      : 'Pick the school schedule to use:';
+    const body = '<div style="text-align:left;">' + reason + '</div>' +
+      '<div style="text-align:left;margin-top:6px;font-size:12px;line-height:1.5;">' +
+      shown.map(function (s, i) {
+        return '<b>' + (i + 1) + ')</b> ' + s.name +
+          ' <span style="opacity:0.7;">(used ' + s.usageCount + 'x)</span>';
+      }).join('<br>') +
+      '</div>' +
+      '<div style="text-align:left;margin-top:6px;">Enter a number:</div>';
+
+    const idx = await _sczAskNumber(body, shown.length);
+    if (idx < 0) {
+      _sczLog('pick', 'user cancelled the schedule choice');
+      return false;
+    }
+    _sczSaveChoice(shown[idx].id, shown[idx].name, countryId);
+    return true;
+  }
+
+  /**
+   * Ask the user for a 1-based number using WazeToastr's prompt dialog, falling back to
+   * window.prompt when the Toastr UI is not available (it loads asynchronously, so it can
+   * still be missing early in the session).
+   *
+   * @param {string} body - HTML shown above the input.
+   * @param {number} max - Highest acceptable value.
+   * @returns {Promise<number>} A 0-based index, or -1 when cancelled or invalid.
+   */
+  function _sczAskNumber(body, max) {
+    return new Promise(function (resolve) {
+      function toIndex(raw) {
+        // Reject anything that is not a bare number. parseInt would happily read "0" out
+        // of arbitrary text (it stops at the first non-digit), so validate the shape first
+        // — that is what made a prefilled HTML body look like a selection of 0.
+        const text = String(raw === null || raw === undefined ? '' : raw).trim();
+        if (!/^\d+$/.test(text)) {
+          _sczLog('pick', 'invalid selection "' + text.slice(0, 40) + '"', false);
+          return -1;
+        }
+        const n = parseInt(text, 10);
+        if (isNaN(n) || n < 1 || n > max) {
+          _sczLog('pick', 'selection out of range: ' + n, false);
+          return -1;
+        }
+        return n - 1;
+      }
+
+      const hasPrompt = typeof WazeToastr !== 'undefined' &&
+        WazeToastr.Alerts && typeof WazeToastr.Alerts.prompt === 'function';
+      if (!hasPrompt) {
+        // Fallback: same content, plain text, native dialog.
+        const raw = window.prompt(body.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, ''), '1');
+        resolve(raw === null ? -1 : toIndex(raw));
+        return;
+      }
+
+      try {
+        // Argument order matters and is easy to get wrong:
+        //   prompt(scriptName, message, defaultText, okFunction, cancelFunction, inputType)
+        // The 3rd parameter is the INPUT'S PREFILLED VALUE, not a subtitle. Passing the
+        // body there prefills the field with the whole list, and the OK handler then reads
+        // that HTML back — parseInt(html) is 0, which read as an invalid selection.
+        WazeToastr.Alerts.prompt(
+          'School Zone Schedule',
+          body,
+          '1',                                   // prefill a valid number, not the body
+          function (value) { resolve(toIndex(value)); },
+          function () { resolve(-1); },
+          'text'
+        );
+      } catch (e) {
+        // A Toastr failure must not strand the caller on an unresolved promise.
+        _sczLog('pick', 'WazeToastr prompt failed: ' + e.message, false);
+        resolve(-1);
+      }
+    });
+  }
+
+  /**
+   * Public entry point — apply the saved school schedule to a school zone.
+   * Safe to call with no saved item-id (skips quietly).
+   * @param {string} schoolZoneId - The permanent hazard id to configure.
+   */
+  async function applySchoolZoneSchedule(schoolZoneId) {
+    if (schoolZoneId === undefined || schoolZoneId === null || schoolZoneId === '') {
+      _sczLog('start', 'no school zone id supplied', false);
+      return false;
+    }
+
+    // Ask which schedule to use on first run, after a country change, or if we have
+    // no usable choice yet. One prompt, then it is remembered per country.
+    if (!await _sczChooseSchedule(false)) {
+      _sczLog('start', 'no schedule chosen, skipping', false);
+      return false;
+    }
+
+    // Confirm the target is really a school zone before touching the UI.
+    const existingZone = _sczGetSchoolZone(schoolZoneId);
+    if (!existingZone) {
+      _sczLog('start', 'hazard ' + schoolZoneId + ' is not a readable school zone, skipping', false);
+      return false;
+    }
+    // Already scheduled? WME gives each zone its OWN copy with its own id, so a
+    // zone's scheduleId can never equal the template id we pick. Any existing
+    // scheduleId therefore means "already done" — re-applying would drop the copy
+    // and rebuild it, so leave it alone.
+    if (existingZone.scheduleId !== null && existingZone.scheduleId !== undefined && String(existingZone.scheduleId) !== '') {
+      _sczLog('start', 'zone ' + schoolZoneId + ' already has a schedule, skipping');
+      _sczToast('This school zone already has a schedule. Delete it first to replace it.', true);
+      return true;
+    }
+
+    _sczLog('start', 'applying schedule ' + (schoolZoneScheduleItemId ? '"' + schoolZoneScheduleItemId + '"' : '(resolved id)') + ' to zone ' + schoolZoneId);
+    _sczToast('Applying saved schedule…');
+
+    try {
+      // The editor panel (with "Create a schedule") only renders for the *live*
+      // selection. On the create path the zone is already selected, so the panel is
+      // already open — re-selecting would only make the UI flicker. Try the button
+      // first, and re-select only if it is genuinely missing (the manual-button path).
+      let addBtn = _sczDeepQuery(_SCZ.ADD_SCHEDULE);
+
+      if (!addBtn) {
+        _sczLog('reselect', 'panel not open, re-selecting the zone');
+        try {
+          wmeSDK.Editing.clearSelection();
+        } catch (clearErr) {
+          _sczLog('reselect', 'clearSelection failed (continuing): ' + clearErr.message, false);
+        }
+        await new Promise(function (r) { setTimeout(r, 150); });
+        try {
+          wmeSDK.Editing.setSelection({ selection: { ids: [Number(schoolZoneId)], objectType: 'permanentHazard' } });
+        } catch (selErr) {
+          _sczLog('reselect', 'setSelection failed: ' + selErr.message, false);
+        }
+        // Wait for the editor via the SDK event, falling back to a poll. A miss here
+        // is now a genuine failure (panel never opened), not the normal slow path.
+        // Accept the existing-schedule card too: on an already-scheduled zone there is
+        // no "Create a schedule" button, and waiting only for it always timed out.
+        addBtn = await _sczWaitForEditor(_SCZ.ADD_SCHEDULE, 6000) ||
+                 _sczDeepQuery(_SCZ.SCHEDULE_CARD);
+      } else {
+        _sczLog('open', 'schedule panel already open, no re-selection needed');
+      }
+
+      if (!addBtn) {
+        _sczLog('open', '"Create a schedule" button never appeared (panel did not open?)', false);
+        _sczToast('Could not open the schedule dialog — select the school zone and retry.', true);
+        return false;
+      }
+      _sczClick(addBtn);
+      _sczLog('open', 'clicked "Create a schedule"');
+      // Steps 2-3: search + pick the schedule. The box is a FILTERED search — empty
+      // text returns zero results (confirmed live), so the saved NAME is required.
+      // Stored alongside the id by _sczChooseSchedule, so no lookup is needed here.
+      if (!schoolZoneScheduleItemId) {
+        _sczLog('search', 'no saved schedule name for id ' + schoolZoneScheduleResolvedId, false);
+        _sczToast('Could not look up the schedule name. Pick the schedule again.', true);
+        return false;
+      }
+      if (!await _sczSelectScheduleFromDropdown(schoolZoneScheduleItemId)) {
+        _sczToast('Could not select the schedule.', true);
+        return false;
+      }
+
+      // Step 1 → 2, keyed on each step's own form (see _sczAdvanceStep).
+      if (!await _sczAdvanceStep(_SCZ.INCLUDE_FORM, _SCZ.EXCLUDE_FORM, 'step1')) {
+        _sczToast('Could not advance past the included-dates step.', true);
+        return false;
+      }
+
+      // Step 2 → 3. Step 3 has no form of its own (it is the confirm/publish view),
+      // so wait for the excluded form to disappear instead — that is the real signal
+      // that the dialog moved on, and it cannot be satisfied by the old DOM.
+      _sczClick(_sczDeepQuery(_SCZ.NEXT));
+      const leftExclude = await (async function () {
+        const deadline = Date.now() + 6000;
+        while (Date.now() < deadline) {
+          if (!_sczDeepQuery(_SCZ.EXCLUDE_FORM)) return true;
+          await new Promise(function (r) { setTimeout(r, 200); });
+        }
+        return false;
+      })();
+      if (!leftExclude) {
+        _sczLog('step2', 'clicked Next but the excluded-dates form never went away', false);
+        _sczToast('Could not advance past the excluded-dates step.', true);
+        return false;
+      }
+      _sczLog('step2', 'left the excluded-dates step');
+
+      const publishBtn = await _sczWaitFor(_SCZ.PUBLISH, 6000);
+      if (!publishBtn) {
+        _sczLog('publish', 'Publish button not found', false);
+        _sczToast('Publish step reached but the Publish button was not found.', true);
+        return false;
+      }
+      _sczClick(publishBtn);
+      _sczLog('publish', 'clicked Publish');
+
+      // Trust the data model, not the click. The zone gets its OWN schedule copy with
+      // a fresh id, so success = "a scheduleId exists", not "it equals the template".
+      const confirmedId = await _sczConfirmScheduleApplied(schoolZoneId);
+      if (confirmedId) {
+        _sczLog('verify', 'zone now carries its own schedule "' + confirmedId + '" (copied from the picked template)');
+        _sczToast('School schedule applied successfully.');
+        return true;
+      }
+
+      _sczLog('verify', 'Publish clicked but no scheduleId appeared on the zone', false);
+      _sczToast('Publish was clicked, but no schedule appeared on the zone.', true);
+      return false;
+    } catch (err) {
+      Logger.error('[SchoolZone Schedule] failed:', err);
+      _sczToast('Schedule automation failed: ' + err.message, true);
+      return false;
+    }
+  }
+
+  /**
+   * Inject the schedule controls into the school zone's Schedule tab, right below
+   * "Create a schedule". Living in the panel it belongs to beats a sidebar field,
+   * and it is only offered when a school zone is actually selected.
+   */
+  function injectSchoolZoneSchedulePanel(wmeSDK) {
+    // Drop any previous panel and any observer still waiting on the last selection.
+    if (sczInjectObserver) {
+      try { sczInjectObserver.disconnect(); } catch (e) { /* already gone */ }
+      sczInjectObserver = null;
+    }
+    $('#poi-scz-panel').remove();
+
+    const selection = wmeSDK.Editing.getSelection();
+    if (!selection || selection.objectType !== 'permanentHazard' || !selection.ids || selection.ids.length !== 1) return;
+
+    const zone = _sczGetSchoolZone(selection.ids[0]);
+    if (!zone) return; // not a school zone
+
+    if (tryInjectSchoolZonePanel(wmeSDK)) return;
+
+    // Not mounted yet. Rather than polling on a fixed interval — which adds up to ~2s of
+    // latency on top of the event delay — watch the DOM and inject the moment the banner
+    // and tab content both exist. WME renders these in a burst, so this fires in the same
+    // frame they appear.
+    var deadline = Date.now() + 10000;
+    sczInjectObserver = new MutationObserver(function () {
+      if (sczInjectObserver && tryInjectSchoolZonePanel(wmeSDK)) {
+        sczInjectObserver.disconnect();
+        sczInjectObserver = null;
+        return;
+      }
+      if (Date.now() > deadline) {
+        // Give up quietly: the panel is an enhancement, and a zone with no tab (a hazard
+        // being created before the editor is ready) is a legitimate miss.
+        if (sczInjectObserver) {
+          sczInjectObserver.disconnect();
+          sczInjectObserver = null;
+        }
+        _sczLog('inject', 'gave up waiting for the schedule panel to mount', false);
+      }
+    });
+    sczInjectObserver.observe(document.body, { childList: true, subtree: true });
+  }
+
+  /**
+   * One injection attempt. Returns true once the panel is in the DOM (or was already).
+   * Kept separate so the MutationObserver can call it on every mutation cheaply.
+   */
+  function tryInjectSchoolZonePanel(wmeSDK) {
+    const selection = wmeSDK.Editing.getSelection();
+    if (!selection || selection.objectType !== 'permanentHazard' || !selection.ids || selection.ids.length !== 1) return true; // nothing to do
+
+    const zone = _sczGetSchoolZone(selection.ids[0]);
+    if (!zone) return true; // not a school zone
+
+    // Both paths must land in the SAME position or the panel jumps around: anchoring on
+    // the empty-state put it BEFORE the content, anchoring on the card put it AFTER.
+    // The anchor is therefore the school-zone banner, which sits above the tab bar and
+    // exists in both states — the panel goes directly underneath it.
+    const addBtn = _sczDeepQuery(_SCZ.ADD_SCHEDULE);
+    const schedCard = addBtn ? null : _sczDeepQuery(_SCZ.SCHEDULE_CARD);
+    const content = addBtn || schedCard;
+    const banner = _sczDeepQuery(_SCZ.BANNER);
+    if (!content || !banner) return false; // not mounted yet — keep watching
+
+    // Insert directly below the banner, i.e. between it and the tab bar.
+    const host = banner.parentNode;
+    if (!host) return false;
+    if (host.querySelector('#poi-scz-panel')) return true; // already injected
+
+    // Styling follows the Nepali GIS Layers panel: a card, an uppercase accent title
+    // bar, and full-width solid buttons with a hover shade. Classes are prefixed
+    // `poi-scz-` and the rules are injected once, so this stays out of the inline
+    // style soup and matches the rest of the ecosystem.
+    injectSchoolZoneScheduleStyles();
+
+    const panel = document.createElement('div');
+    panel.id = 'poi-scz-panel';
+    panel.className = 'poi-scz-panel';
+    panel.innerHTML =
+      '<div class="poi-scz-card">' +
+        '<div class="poi-scz-card-title">POI Shortcuts — schedule</div>' +
+        '<div id="poi-scz-current" class="poi-scz-current"></div>' +
+        '<div class="poi-scz-btn-row">' +
+          '<button type="button" id="poi-scz-choose" class="poi-scz-btn poi-scz-btn-neutral">Choose…</button>' +
+          '<button type="button" id="poi-scz-apply" class="poi-scz-btn poi-scz-btn-primary">Apply</button>' +
+        '</div>' +
+      '</div>';
+
+    // Insert right after the banner. Using the banner (not the tab) keeps the placement
+    // outside the tab content, so it never moves when the tab switches between the
+    // empty-state and the schedule card.
+    host.insertBefore(panel, banner.nextSibling);
+
+    function refreshCurrent() {
+      const el = panel.querySelector('#poi-scz-current');
+      if (!el) return;
+      const chosen = schoolZoneScheduleResolvedId && schoolZoneScheduleItemId;
+      el.innerHTML = chosen
+        ? '<span class="poi-scz-dot"></span>Using <b>' + schoolZoneScheduleItemId + '</b>'
+        : '<span class="poi-scz-dot poi-scz-dot-empty"></span>No schedule chosen yet';
+      el.classList.toggle('poi-scz-current-unset', !chosen);
+      // Nothing to apply until a schedule is chosen, so say so on the control itself.
+      const applyBtn = panel.querySelector('#poi-scz-apply');
+      if (applyBtn) applyBtn.disabled = !chosen;
+    }
+
+    refreshCurrent(); // render the chosen/unset state on first paint
+
+    panel.querySelector('#poi-scz-choose').addEventListener('click', async function () {
+      // force = true: "Choose…" must always re-ask, even if one is already saved.
+      if (await _sczChooseSchedule(true)) refreshCurrent();
+    });
+
+    const hazardId = selection.ids[0];
+    panel.querySelector('#poi-scz-apply').addEventListener('click', function () {
+      applySchoolZoneSchedule(hazardId);
+    });
+
+    return true;
+  }
+
+  /**
+   * Styles for the school zone schedule panel. Injected once, keyed by id.
+   *
+   * Visual language borrowed from the Nepali GIS Layers panel so the two scripts look
+   * like one family: hairline-bordered card, uppercase accent title bar, full-width
+   * solid buttons with a hover shade. Colours use WME's CSS variables where they exist
+   * so the panel follows the editor theme, with the same literal fallbacks as that
+   * script for the values WME does not expose.
+   */
+  function injectSchoolZoneScheduleStyles() {
+    var css = [
+      '.poi-scz-card { box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--hairline, #ddd); border-radius: 6px; background: var(--background_default, #fff); font-family: inherit; font-size: 11px; line-height: 1.45; color: var(--content_default, #333); }',
+      '.poi-scz-card-title { display: flex; align-items: center; padding-bottom: 3px; margin-bottom: 6px; border-bottom: 1px solid var(--hairline, #ddd); font-size: 9px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--primary, #DC143C); }',
+      '.poi-scz-current { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 11px; color: var(--content_p1, #333); }',
+      '.poi-scz-current-unset { color: var(--content_p2, #666); font-style: italic; }',
+      // Status dot: reads as "active" at a glance, matching the green Active badge WME
+      // shows on a scheduled zone.
+      '.poi-scz-dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: #8BC34A; }',
+      '.poi-scz-dot-empty { background: transparent; border: 1px solid var(--hairline, #999); }',
+      '.poi-scz-btn-row { display: flex; gap: 6px; }',
+      '.poi-scz-btn { flex: 1 1 0; min-width: 0; box-sizing: border-box; padding: 6px 10px; border: none; border-radius: 6px; font-family: inherit; font-size: 11px; font-weight: 600; line-height: 1.2; text-align: center; color: #fff; cursor: pointer; transition: background-color 0.2s; }',
+      '.poi-scz-btn:disabled { opacity: 0.5; cursor: not-allowed; }',
+      '.poi-scz-btn-primary { background-color: #8BC34A; }',
+      '.poi-scz-btn-primary:hover:not(:disabled) { background-color: #689F38; }',
+      '.poi-scz-btn-neutral { background-color: #0066cc; }',
+      '.poi-scz-btn-neutral:hover:not(:disabled) { background-color: #0052a3; }',
+      '.poi-scz-btn:focus-visible { outline: 2px solid var(--primary, #DC143C); outline-offset: 1px; }',
+    ].join('\n');
+    injectCSSWithID('poi-scz-panel-styles', css);
   }
 
   function _buildHazardCallback(hazardKey, drawMode) {
@@ -1198,6 +2292,228 @@
           } catch (e) { Logger.warn('WazeToastr.Alerts.info failed:', e); }
           $("wz-icon[name='" + iconName + "']").parent().trigger('click');
         }
+      });
+    };
+  }
+
+  /**
+   * Creates an area map comment from a GeoJSON Polygon geometry.
+   * The comment is added to the WME data model but NOT saved — the user reviews
+   * and edits it, then saves with WME's normal Save button.
+   * @param {Object} geometry A GeoJSON Polygon geometry.
+   * @returns {Object|null} The created MapComment, or null on failure.
+   */
+  function _createMapComment(geometry) {
+    try {
+      const args = {
+        subject: 'Area comment',
+        geometry: geometry,
+      };
+      // Lock is optional: 0 means "no explicit lock", mirroring the POI shortcuts.
+      const applyLock = !isNaN(mapCommentLock) && mapCommentLock > 0;
+      if (applyLock) args.lockRank = mapCommentLock;
+
+      let comment;
+      try {
+        comment = wmeSDK.DataModel.MapComments.addComment(args);
+      } catch (lockError) {
+        if (!applyLock) throw lockError;
+        // lockRank is validated against the user's rank — retry unlocked rather than fail.
+        Logger.warn('Lock level ' + (mapCommentLock + 1) + ' could not be applied, creating without lock:', lockError);
+        delete args.lockRank;
+        comment = wmeSDK.DataModel.MapComments.addComment(args);
+        try {
+          WazeToastr.Alerts.warning(scriptName, '<b>Map comment</b> created without the selected lock level (not permitted for your rank).', false, false, 4000);
+        } catch (e) { Logger.warn('WazeToastr.Alerts.warning failed:', e); }
+      }
+
+      Logger.info('Map comment created:', comment && comment.id);
+      try {
+        WazeToastr.Alerts.success(scriptName, '<b>Map comment</b> created', false, false, 2500);
+      } catch (e) { Logger.warn('WazeToastr.Alerts.success failed:', e); }
+      return comment || null;
+    } catch (error) {
+      Logger.error('Failed to create map comment:', error);
+      try {
+        WazeToastr.Alerts.error(scriptName, 'Failed to create <b>Map comment</b>: ' + error.message, false, false, 4000);
+      } catch (e) { Logger.warn('WazeToastr.Alerts.error failed:', e); }
+      return null;
+    }
+  }
+
+  /**
+   * Waits for WME's SDK to announce the new map comment in the data model.
+   * Uses the 'wme-data-model-objects-added' event (requires
+   * Events.trackDataModelEvents to be enabled for the 'mapComments' data model).
+   * Resolves with the added object id, or null on timeout.
+   * @param {number} timeoutMs How long to wait before giving up.
+   * @returns {Promise<string|number|null>} The added map comment id.
+   */
+  function _waitForMapCommentAdded(timeoutMs) {
+    return new Promise(function (resolve) {
+      var settled = false;
+      var timer = null;
+      var off = null;
+
+      function finish(id) {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        try {
+          if (typeof off === 'function') off();
+        } catch (e) { Logger.warn('Failed to unsubscribe from data model events:', e); }
+        resolve(id === undefined ? null : id);
+      }
+
+      try {
+        wmeSDK.Events.trackDataModelEvents({ dataModelName: 'mapComments' });
+      } catch (e) {
+        Logger.warn('Unable to track mapComments data model events:', e);
+      }
+
+      try {
+        off = wmeSDK.Events.on({
+          eventName: 'wme-data-model-objects-added',
+          eventHandler: function (payload) {
+            if (!payload || payload.dataModelName !== 'mapComments') return;
+            var ids = payload.objectIds || [];
+            if (!ids.length) return;
+            finish(ids[ids.length - 1]);
+          },
+        });
+      } catch (e) {
+        Logger.warn('Unable to listen for map comment added events:', e);
+      }
+
+      timer = setTimeout(function () { finish(null); }, timeoutMs || 2500);
+    });
+  }
+
+  /**
+   * Selects a map comment so WME opens its editor panel. WME can drop a selection
+   * that is applied while the drawing mode is still winding down, so the selection
+   * is re-applied a couple of times afterwards.
+   * @param {string|number} commentId The map comment id.
+   * @param {number} [retries] Remaining re-selection attempts.
+   */
+  function _selectMapComment(commentId, retries) {
+    if (commentId === undefined || commentId === null) return;
+    if (retries === undefined) retries = 2;
+    // setSelection validates ids as strings — the SDK returns numeric map comment ids.
+    const selectionId = String(commentId);
+    try {
+      wmeSDK.Editing.setSelection({ selection: { objectType: 'mapComment', ids: [selectionId] } });
+      Logger.info('Map comment selected:', selectionId);
+    } catch (error) {
+      Logger.warn('Unable to select the new map comment:', error);
+      return;
+    }
+    if (retries > 0) {
+      setTimeout(function () {
+        var selection = null;
+        try {
+          selection = wmeSDK.Editing.getSelection();
+        } catch (e) { /* ignore */ }
+        var stillSelected = selection
+          && selection.objectType === 'mapComment'
+          && selection.ids
+          && selection.ids.length === 1
+          && String(selection.ids[0]) === selectionId;
+        if (!stillSelected) _selectMapComment(commentId, retries - 1);
+      }, 300);
+    }
+  }
+
+  /**
+   * Converts a drawn LineString into a closed polygon corridor of the configured width.
+   * @param {Object} lineGeometry A GeoJSON LineString geometry.
+   * @returns {Object|null} A GeoJSON Polygon geometry (largest part when buffering
+   *                        splits the line into a MultiPolygon).
+   */
+  function _lineToCommentPolygon(lineGeometry) {
+    const coords = (lineGeometry && lineGeometry.coordinates) || [];
+    if (coords.length < 2) {
+      throw new Error('The drawn line is too short — draw at least two points.');
+    }
+    const buffered = turf.buffer(lineGeometry, mapCommentWidth / 2, { units: 'meters' });
+    if (!buffered || !buffered.geometry) {
+      throw new Error('Could not build an area from the drawn line.');
+    }
+    if (buffered.geometry.type === 'MultiPolygon') {
+      // A self-intersecting line can split the buffer — keep the largest part.
+      let largest = null;
+      let largestArea = -1;
+      buffered.geometry.coordinates.forEach(function (rings) {
+        const part = turf.polygon(rings);
+        const area = turf.area(part);
+        if (area > largestArea) { largestArea = area; largest = part; }
+      });
+      return largest ? largest.geometry : null;
+    }
+    return buffered.geometry;
+  }
+
+  /**
+   * Guarantees every ring of a Polygon geometry is closed (first point == last point),
+   * which WME requires for map comment areas.
+   * @param {Object} polygonGeometry A GeoJSON Polygon geometry.
+   * @returns {Object} A GeoJSON Polygon geometry with closed rings.
+   */
+  function _ensureClosedPolygon(polygonGeometry) {
+    if (!polygonGeometry || polygonGeometry.type !== 'Polygon' || !Array.isArray(polygonGeometry.coordinates)) {
+      return polygonGeometry;
+    }
+    const rings = polygonGeometry.coordinates.map(function (ring) {
+      if (!ring || !ring.length) return ring;
+      const first = ring[0];
+      const last = ring[ring.length - 1];
+      if (first[0] === last[0] && first[1] === last[1]) return ring;
+      return ring.concat([[first[0], first[1]]]);
+    });
+    return { type: 'Polygon', coordinates: rings };
+  }
+
+  /**
+   * Builds the shortcut callback that draws on the map and creates an area map comment.
+   * @param {string} drawMode 'polygon' (draw an area) or 'line' (draw a line buffered into an area).
+   * @returns {Function} Shortcut callback.
+   */
+  function _buildMapCommentCallback(drawMode) {
+    return function () {
+      const isLineMode = drawMode === 'line';
+      try {
+        WazeToastr.Alerts.info(scriptName, isLineMode
+          ? 'Draw the <b>Map comment</b> line on the map'
+          : 'Draw the <b>Map comment</b> area on the map', false, false, 3000);
+      } catch (e) { Logger.warn('WazeToastr.Alerts.info failed:', e); }
+
+      const drawPromise = isLineMode ? wmeSDK.Map.drawLine() : wmeSDK.Map.drawPolygon();
+      drawPromise.then(function (drawn) {
+        try {
+          const drawnGeometry = drawn && drawn.geometry ? drawn.geometry : drawn;
+          const geometry = isLineMode
+            ? _lineToCommentPolygon(drawnGeometry)
+            : _ensureClosedPolygon(drawnGeometry);
+          if (!geometry) return;
+          // Subscribe BEFORE adding so we cannot miss the data model event, then
+          // re-select the comment once WME announces it (the drawing flow clears
+          // the selection). Falls back to the addComment() return id on timeout.
+          const addedPromise = _waitForMapCommentAdded(2500);
+          const comment = _createMapComment(geometry);
+          addedPromise.then(function (addedId) {
+            const commentId = addedId !== null && addedId !== undefined
+              ? addedId
+              : (comment && comment.id);
+            _selectMapComment(commentId);
+          });
+        } catch (error) {
+          Logger.error('Failed to create map comment:', error);
+          try {
+            WazeToastr.Alerts.error(scriptName, 'Failed to create <b>Map comment</b>: ' + error.message, false, false, 4000);
+          } catch (e) { Logger.warn('WazeToastr.Alerts.error failed:', e); }
+        }
+      }).catch(function (error) {
+        Logger.info('Map comment drawing was cancelled or failed:', error);
       });
     };
   }
@@ -1407,6 +2723,9 @@
     { id: 'WMEPOI_narrow-bridge', description: 'Create Narrow Bridge', settingsKey: 'NarrowBridgeShortcut', callback: _buildHazardCallback('narrow-bridge') },
     { id: 'WMEPOI_both-lanes-ending', description: 'Create Lane End (abrupt)', settingsKey: 'LaneEndingShortcut', callback: _buildHazardCallback('both-lanes-ending') },
     { id: 'WMEPOI_both-shoulders-ending', description: 'Create Shoulder End (abrupt)', settingsKey: 'ShoulderEndingShortcut', callback: _buildHazardCallback('both-shoulders-ending') },
+    // Map comment shortcuts
+    { id: 'WMEPOI_mapcomment-area', description: 'Create Map Comment Area', settingsKey: 'MapCommentAreaShortcut', callback: _buildMapCommentCallback('polygon') },
+    { id: 'WMEPOI_mapcomment-area-line', description: 'Create Map Comment Area using Drawline', settingsKey: 'MapCommentAreaLineShortcut', callback: _buildMapCommentCallback('line') },
     // Utility shortcuts
     { id: 'WMEPOI_convert-other-to-residential', description: 'Convert OTHER to Residential (Copy Name to House Number)', settingsKey: 'ConvertOtherShortcut', callback: function () { convertOtherToResidential(wmeSDK); } },
   ];
@@ -4296,12 +5615,15 @@ Text: "${text}"`;
       const { tabLabel, tabPane } = await wmeSDK.Sidebar.registerScriptTab();
       // Add label/icon to the tab
       tabLabel.innerHTML = '<span style="display:flex;align-items:center;"><span style="font-size:16px;margin-right:4px;">⭐</span>POI Shortcuts</span>';
+      // All panel styling lives in one injected stylesheet, so the markup below stays
+      // readable and the colours track WME's theme instead of being inlined per element.
+      injectPOISidebarStyles();
       // Use buildAllItemOptions to show all 10 dropdowns with script info header
       tabPane.innerHTML = `
         <div id='wme-poi-shortcuts-content'>
-          <div style="padding: 8px 16px; background: #f5f5f5; border-bottom: 1px solid #ddd; margin-bottom: 10px;">
-            <div style="font-weight: bold; font-size: 14px; color: #333;">${scriptName}</div>
-            <div style="font-size: 12px; color: #666;">${scriptVersion}</div>
+          <div class="wme-poi-header">
+            <span class="wme-poi-header-title">${scriptName}</span>
+            <span class="wme-poi-header-version">v${scriptVersion}</span>
           </div>
           ${buildAllItemOptions()}
         </div>`;
@@ -4388,6 +5710,42 @@ Text: "${text}"`;
               // Restore previous valid value if invalid input
               this.value = schoolZoneWidth;
               Logger.warn('Invalid school zone width. Must be between 1 and 200.');
+            }
+          });
+        }
+
+        // Add event listener for Map Comment Width input
+        const inputMapCommentWidth = document.getElementById('_inputMapCommentWidth');
+        if (inputMapCommentWidth) {
+          // Restore value from localStorage
+          inputMapCommentWidth.value = mapCommentWidth;
+          inputMapCommentWidth.addEventListener('change', function () {
+            const newWidth = parseInt(this.value, 10);
+            if (!isNaN(newWidth) && newWidth > 0 && newWidth <= 200) {
+              mapCommentWidth = newWidth;
+              localStorage.setItem('wme-poi-shortcuts-map-comment-width', newWidth.toString());
+              Logger.info(`Map comment line width set to ${newWidth}`);
+            } else {
+              // Restore previous valid value if invalid input
+              this.value = mapCommentWidth;
+              Logger.warn('Invalid map comment width. Must be between 1 and 200.');
+            }
+          });
+        }
+
+        // Add event listener for Map Comment Lock dropdown
+        const selMapCommentLock = document.getElementById('_selMapCommentLock');
+        if (selMapCommentLock) {
+          selMapCommentLock.value = String(Math.min(Math.max(mapCommentLock, 0), _getMaxAllowedLockRank()));
+          selMapCommentLock.addEventListener('change', function () {
+            const newLock = parseInt(this.value, 10);
+            if (!isNaN(newLock) && newLock >= 0 && newLock <= _getMaxAllowedLockRank()) {
+              mapCommentLock = newLock;
+              localStorage.setItem('wme-poi-shortcuts-map-comment-lock', newLock.toString());
+              Logger.info(`Map comment lock level set to ${newLock + 1}`);
+            } else {
+              this.value = String(Math.min(Math.max(mapCommentLock, 0), _getMaxAllowedLockRank()));
+              Logger.warn('Invalid map comment lock level.');
             }
           });
         }
@@ -4543,6 +5901,156 @@ Text: "${text}"`;
   Logger.info(`${scriptName} initialized.`);
 
   /******************************************Changelogs***********************************************************
+  2026.09.30.003
+  - Adopted the Nepali GIS Layers palette, so both scripts look like one family.
+    * Header is now the crimson gradient (#DC143C -> #7d0b22) with the version as plain
+      text instead of a pill.
+    * Card headers are a distinct band — a 3px cyan (#29B6F6) accent bar over the muted
+      surface colour — so the clickable header is clearly separate from the card body
+      underneath, and the category field reads as an editable control.
+    * Slot labels are now a bare number (1, 2, ...) rather than "ITEM 1"; the number is
+      the slot's identity so it is the brightest text in the band.
+    * The school zone box carries the same cyan accent bar, so the accent reads as one
+      system rather than two unrelated highlights.
+  2026.09.30.002
+  - Fixed the expanded shortcut cards looking cramped, and the focus ring drawing a box
+    around the whole card.
+    * The header/body gap was too tight when expanded, so Lock/Geometry crowded the
+      category dropdown. Both gaps are now 7px.
+    * The focus ring used a positive outline-offset on a full-width header, which drew a
+      box around the entire card. It is now inset (-2px) so it hugs the header row.
+    * The Lock/Geometry selects now align-self: center, so the dropdown arrow no longer
+      drifts when the row is taller than the control.
+  2026.09.30.001
+  - The school zone speed limit and line width are now grouped in a bordered box.
+    * Labelled "School Zone", with one row each, and the units (km/h, m) shown after the
+      field instead of packed into the label. Both field ids are unchanged, so the
+      existing listeners still work.
+  2026.09.29.014
+  - POI Shortcuts sidebar tab restyled to be theme-aware, and the 10 shortcut slots
+    became collapsible cards.
+    * The panel was built from ~40 inline styles with hardcoded colours (#f5f5f5, #ddd,
+      #333, #666, #888), so in WME's dark theme it showed a light-grey header block and
+      near-black text on a dark column. Every colour is now a WME CSS token with a light
+      fallback, so the panel follows the editor theme.
+    * Styling moved out of the markup into one injected stylesheet keyed by id, so the
+      palette can be changed without touching the builders.
+    * Each Item 1-10 is now a card with a collapsible body; the category dropdown sits in
+      the header, so a folded card still shows what the slot is bound to. Fold state per
+      slot is remembered in localStorage. All ten stay visible.
+    * The header is a gradient using --primary_variant → --primary, with the version in a
+      translucent pill.
+    * Setttings are one control group per row. Native checkboxes are themed with
+      accent-color instead of rendering WME's default blue, and every card header has a
+      focus-visible ring and is keyboard operable.
+    * Dropdowns no longer carry inline font-size/height/width; the stylesheet owns control
+      appearance and only the genuinely per-control widths stay inline.
+    * All element ids are unchanged, so no existing listener needed editing.
+  2026.09.29.011
+  - Fixed the schedule picker rejecting every choice as an invalid selection.
+    * WazeToastr.Alerts.prompt()'s third parameter is the input's PREFILLED VALUE, not a
+      subtitle. It was being passed the message body, so the prompt opened with the whole
+      schedule list already in the text field and the OK handler read that HTML back.
+      parseInt() found a 0 in it, which failed validation, so the picker always ended as
+      "user cancelled". The field is now prefilled with '1'.
+    * toIndex() now requires a bare number instead of using parseInt on arbitrary text,
+      so a stray HTML body can no longer be read as the number 0.
+  2026.09.29.010
+  - Schedule picker now uses the WazeToastr dialog instead of window.prompt.
+    * WazeToastr.Alerts.prompt() gives a themed in-page dialog, so the picker no longer
+      drops to a native browser prompt that blocks the page and ignores the WME theme.
+    * The schedule list is HTML, so names can be laid out properly rather than as a
+      plain-text block.
+    * New _sczAskNumber() helper returns a promise resolving to a 0-based index or -1,
+      and falls back to window.prompt if WazeToastr has not finished loading (it loads
+      asynchronously) or throws — so the caller can never hang on an unresolved promise.
+  2026.09.29.009
+  - Schedule panel appears much faster.
+    * The injection was slow because three delays stacked: a 400ms timeout on
+      wme-feature-editor-opened, another 400ms on wme-selection-changed, then up to
+      8 x 250ms of retries — roughly 2.4s before the panel showed.
+    * Both timeouts are gone. The event fires before the panel renders, so a fixed
+      delay was always either too short or wasted latency.
+    * Retries are now a MutationObserver that injects the moment the banner and tab
+      content exist, i.e. the same frame WME renders them, instead of on a 250ms tick.
+      It disconnects as soon as it injects, and gives up after 10s.
+    * Injection is split into injectSchoolZoneSchedulePanel() (sets up the watch) and
+      tryInjectSchoolZonePanel() (one attempt), so the observer path is the same code
+      as the direct path.
+  2026.09.29.008
+  - Schedule panel now sits directly under the "Drivers will get alerts based on the
+    schedule" banner, above the tab bar.
+    * It anchors on `school-zone-banner` rather than the tab content, so it lives outside
+      the tab pane and no longer needs the empty-state/card special-casing.
+    * Injection waits for both the banner and the tab content, since either can render
+      a beat after the editor-opened event.
+  2026.09.29.007
+  - School zone schedule panel restyled to match the Nepali GIS Layers panel.
+    * Now a hairline-bordered card with an uppercase accent title bar, instead of the
+      old top-border with inline styles. Rules are injected once as CSS classes rather
+      than repeated inline, so the panel can be themed.
+    * Buttons are full-width solid with a hover shade: Choose… in blue, Apply in green.
+    * Apply is disabled until a schedule is chosen, and the current choice shows a
+      status dot (filled = chosen, hollow = not) in place of the plain grey text.
+    * Colours use WME's CSS variables with literals as fallbacks, so the panel follows
+      the editor theme rather than hard-coding greys.
+  2026.09.29.006
+  - School zone schedule panel now sits directly below the "Schedule" tab name.
+    * It is inserted as the first content child of the tab (after the tab's shadow root),
+      so it renders in the same place whether or not the zone already has a schedule.
+    * Previously it was appended last, which read as part of the schedule list.
+  2026.09.29.005
+  - Fixed the schedule panel jumping position depending on zone state.
+    * It was anchored on the "Create a schedule" empty-state when unscheduled and on
+      the schedule card when scheduled. Those are siblings in a different order, so the
+      panel rendered ABOVE the content in one case and BELOW it in the other.
+    * Both paths now resolve the Schedule tab (`wz-tab`) and append to it, so the panel
+      is always last. Verified against live DOM for both states.
+  2026.09.29.004
+  - School zone panel now appears on zones that ALREADY have a schedule.
+    * The panel was anchored only on the "Create a schedule" empty-state, which WME
+      replaces with a schedule card once one exists — so the panel silently vanished
+      on exactly the zones where you would want to change the schedule.
+    * It now anchors on the existing schedule card (`list-item-card-revamp`) as well.
+    * The dialog-open wait accepts that card too; on a scheduled zone there is no
+      "Create a schedule" button, so the old wait always timed out.
+    * "Apply" on an already-scheduled zone now says so instead of failing silently.
+  2026.09.29.003
+  - School zone schedule: pick instead of type.
+    * On first use — or when the country changes — the script asks which of the
+      country's schedules to use, listed from WME's Schedules API. The choice is
+      remembered per country, so it is asked once, not on every zone.
+    * "Choose…" in the school zone panel re-asks at any time.
+    * The typed schedule-name field and "Find ID" button are gone; the panel now
+      shows the chosen schedule and offers Choose… / Apply.
+    * Removed the zone-scanning fallback (_sczScanForScheduledZones,
+      _sczScanViewportForScheduledZones) and _sczResolveScheduleName: the API
+      supplies every id with its name, so the id-lookup and map-extent filter were
+      redundant.
+  2026.09.29.002
+  - School zone schedule fixes after live testing:
+    * "Find Schedule ID" now lists schedules from WME's Schedules API (name + id), so no
+      GUID has to be known or typed. Falls back to scanning loaded zones, then to a name.
+    * Schedule matching is by NAME (the dialog's search box is a filtered search — typing
+      nothing returns no results), with the id used only as a confirmation.
+    * Step progression is keyed on each step's own form testid; the Next button is reused
+      across steps, so waiting on it returned instantly and stalled at step 2 of 3.
+    * Fixed a wrong success check: WME COPIES the picked template into a NEW per-zone
+      schedule, so a different scheduleId is expected. Verifying against the template id
+      failed every successful run.
+    * "Already scheduled" is now any existing scheduleId, since a zone's own copy can never
+      equal the template id.
+    * Removed the deselect/reselect dance when the schedule panel is already open.
+    * Removed dead code: _sczRememberResolvedId, _sczLastPickedId, _sczHasStep.
+  2026.09.29.001
+  - Added automatic school zone schedule support:
+    * Set the schedule item-id in the POI Shortcuts sidebar tab (saved to localStorage)
+    * Applied automatically after creating a school zone via either School Zone shortcut
+    * Also available on demand via the "Apply Schedule to Selected Zone" button
+    * Drives WME's native schedule dialog (create -> search -> 3 steps -> publish)
+    * Verifies the result by reading scheduleId back from the SDK instead of trusting the click
+    * Skips zones that are already on the target schedule, and skips non-school-zone hazards
+    * Waits for the editor via the wme-feature-editor-opened event, with a poll fallback
   2026.09.12.001
   - Gemini translation: added a Nepali school naming rule so "Basic School",
     "Lower Secondary School" and "Primary School" are translated as "आधारभूत विद्यालय"
